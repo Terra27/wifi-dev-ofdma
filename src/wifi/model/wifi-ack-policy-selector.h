@@ -32,7 +32,7 @@ namespace ns3 {
  * \ingroup wifi
  *
  * WifiAckPolicySelector is in charge of selecting the acknowledgment policy
- * for PSDUs containing QoS Data frames.
+ * for SU PPDUs and MU PPDUs containing QoS Data frames.
  */
 class WifiAckPolicySelector : public Object
 {
@@ -61,16 +61,18 @@ public:
   Ptr<QosTxop> GetQosTxop (void) const;
 
   /**
-   * Set the QoS Ack Policy for the QoS Data frames contained in the given PSDU
-   * according to the given MacLow transmission parameters. Only single-TID A-MPDUs
-   * are supported at the moment, hence it is expected that all the QoS Data frames
-   * contained in the given PSDU have the same TID. This function is typically
-   * called by MacLow before forwarding the PSDU down to the PHY layer.
+   * Set the QoS Ack Policy for the QoS Data frames contained in each of the PSDU
+   * included in the given PSDU map according to the given MacLow transmission
+   * parameters. Only single-TID A-MPDUs are supported at the moment, hence it is
+   * expected that all the QoS Data frames contained in the given PSDU map have
+   * the same TID. This function is typically called by MacLow before forwarding
+   * the PSDU map down to the PHY layer.
    *
-   * \param psdu the given PSDU.
+   * \param psduMap the given PSDU map.
    * \param params the given MacLow transmission parameters.
    */
-  static void SetAckPolicy (Ptr<WifiPsdu> psdu, const MacLowTransmissionParameters & params);
+  static void SetAckPolicy (std::map <uint16_t, Ptr<WifiPsdu>> psduMap,
+                            const MacLowTransmissionParameters & params);
 
   /**
    * Update the transmission parameters related to the acknowledgment policy for
@@ -83,6 +85,31 @@ public:
    * \param params the MacLow parameters to update.
    */
   virtual void UpdateTxParams (Ptr<WifiPsdu> psdu, MacLowTransmissionParameters & params) = 0;
+
+  /**
+   * Set the QoS Ack Policy for the QoS Data frames contained in each of the PSDUs
+   * of the given MU PPDU. Also, set the MacLow parameters related to the
+   * acknowledgment policy.
+   *
+   * \param psduList the list of PSDUs constituting the MU PPDU.
+   * \param params the MacLow parameters to modify.
+   * \param txFormat the TX format (DL OFDMA, UL OFDMA, NON OFDMA)
+   */
+  virtual void UpdateTxParams (std::map <uint16_t, Ptr<WifiPsdu>> psduMap, MacLowTransmissionParameters & params) = 0;
+
+  /**
+   * Get the acknowledgment procedure for DL MU transmissions.
+   *
+   * \return the acknowledgment procedure for DL MU transmissions
+   */
+  virtual DlMuAckSequenceType GetAckSequenceForDlMu (void) const = 0;
+
+  /**
+   * Get the acknowledgment procedure for UL MU transmissions.
+   *
+   * \return the acknowledgment procedure for UL MU transmissions
+   */
+  virtual UlMuAckSequenceType GetAckSequenceForUlMu (void) const = 0;
 
 protected:
   Ptr<QosTxop> m_qosTxop;      //!< the QoS Txop this selector is associated with

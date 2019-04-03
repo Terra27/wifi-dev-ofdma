@@ -21,6 +21,7 @@
 #include "ns3/log.h"
 #include "wifi-ack-policy-selector.h"
 #include <set>
+#include <algorithm>
 
 namespace ns3 {
 
@@ -63,23 +64,71 @@ WifiAckPolicySelector::GetQosTxop (void) const
 }
 
 void
-WifiAckPolicySelector::SetAckPolicy (Ptr<WifiPsdu> psdu, const MacLowTransmissionParameters & params)
+WifiAckPolicySelector::SetAckPolicy (std::map <uint16_t, Ptr<WifiPsdu>> psduMap,
+                                     const MacLowTransmissionParameters & params)
 {
-  NS_LOG_FUNCTION (psdu << params);
+  NS_LOG_FUNCTION (params);
 
-  std::set<uint8_t> tids = psdu->GetTids ();
-  NS_ASSERT (tids.size () == 1);
-  uint8_t tid = *tids.begin ();
+  for (auto& psdu : psduMap)
+    {
+      std::set<uint8_t> tids = psdu.second->GetTids ();
+      NS_ASSERT (tids.size () == 1);
+      uint8_t tid = *tids.begin ();
 
-  if (params.MustWaitNormalAck () || params.MustWaitBlockAck ())
-    {
-      // Normal Ack or Implicit Block Ack Request policy
-      psdu->SetAckPolicyForTid (tid, WifiMacHeader::NORMAL_ACK);
-    }
-  else
-    {
-      // Block Ack policy
-      psdu->SetAckPolicyForTid (tid, WifiMacHeader::BLOCK_ACK);
+      /* SU PPDU or DL MU PPDU not requiring acknowledgment */
+      if (!params.HasDlMuAckSequence () && !params.HasUlMuAckSequence ())
+        {
+          if (params.MustWaitNormalAck () || params.MustWaitBlockAck ())
+            {
+              // Normal Ack or Implicit Block Ack Request policy
+              psdu.second->SetAckPolicyForTid (tid, WifiMacHeader::NORMAL_ACK);
+            }
+          else
+            {
+              // Block Ack policy
+              psdu.second->SetAckPolicyForTid (tid, WifiMacHeader::BLOCK_ACK);
+            }
+        }
+
+      /* DL MU PPDU requiring acknowledgment */
+      if (params.HasDlMuAckSequence ())
+        {
+          Mac48Address receiver = psdu.second->GetAddr1 ();
+
+          if (params.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT)
+            {
+              // sequence of BAR+BA frames
+              auto list = params.GetStationsReceiveAckFrom ();
+              if (std::find (list.begin (), list.end (), receiver) != list.end ())
+                {
+                  // Normal Ack or Implicit Block Ack Request policy
+                  psdu.second->SetAckPolicyForTid (tid, WifiMacHeader::NORMAL_ACK);
+                  continue;
+                }
+
+              list = params.GetStationsReceiveBlockAckFrom ();
+              if (std::find (list.begin (), list.end (), receiver) != list.end ())
+                {
+                  // Normal Ack or Implicit Block Ack Request policy
+                  psdu.second->SetAckPolicyForTid (tid, WifiMacHeader::NORMAL_ACK);
+                  continue;
+                }
+
+              // Block Ack policy
+              psdu.second->SetAckPolicyForTid (tid, WifiMacHeader::BLOCK_ACK);
+            }
+          else if (params.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_MU_BAR)
+            {
+              // stations need to wait for a MU-BAR
+              psdu.second->SetAckPolicyForTid (tid, WifiMacHeader::BLOCK_ACK);
+            }
+          else if (params.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_AGGREGATE_TF)
+            {
+              // stations send a Block Ack in response to the Trigger frame
+              // No explicit acknowledgment or HE TB PPDU (HTP) Ack policy
+              psdu.second->SetAckPolicyForTid (tid, WifiMacHeader::NO_EXPLICIT_ACK);
+            }
+        }
     }
 }
 

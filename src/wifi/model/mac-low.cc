@@ -636,7 +636,8 @@ MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
       // A QoS Txop must have an installed ack policy selector
       NS_ASSERT (qosTxop->GetAckPolicySelector () != 0);
       qosTxop->GetAckPolicySelector ()->UpdateTxParams (m_currentPacket, m_txParams);
-      qosTxop->GetAckPolicySelector ()->SetAckPolicy (m_currentPacket, m_txParams);
+      std::map <uint16_t, Ptr<WifiPsdu>> psduMap ({std::make_pair (SU_STA_ID, m_currentPacket)});
+      WifiAckPolicySelector::SetAckPolicy (psduMap, m_txParams);
     }
 
   NS_LOG_DEBUG ("startTx size=" << m_currentPacket->GetSize () <<
