@@ -207,7 +207,7 @@ MpduAggregator::GetAmpduSubframeHeader (uint16_t mpduSize, bool isSingle)
 
 std::vector<Ptr<WifiMacQueueItem>>
 MpduAggregator::GetNextAmpdu (Ptr<const WifiMacQueueItem> mpdu, WifiTxVector txVector,
-                              Time ppduDurationLimit) const
+                              Time ppduDurationLimit, uint32_t currentAmpduSize) const
 {
   NS_LOG_FUNCTION (this << *mpdu << ppduDurationLimit);
   std::vector<Ptr<WifiMacQueueItem>> mpduList;
@@ -235,7 +235,6 @@ MpduAggregator::GetNextAmpdu (Ptr<const WifiMacQueueItem> mpdu, WifiTxVector txV
       uint16_t startingSequenceNumber = edcaIt->second->GetBaStartingSequence (recipient, tid);
       Ptr<WifiMacQueueItem> nextMpdu;
       uint16_t maxMpdus = edcaIt->second->GetBaBufferSize (recipient, tid);
-      uint32_t currentAmpduSize = 0;
 
       // check if the received MPDU meets the size and duration constraints
       if (edcaIt->second->GetLow ()->IsWithinSizeAndTimeLimits (mpdu, txVector, 0, ppduDurationLimit))

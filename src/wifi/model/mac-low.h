@@ -53,6 +53,7 @@ class MsduAggregator;
 class MpduAggregator;
 struct RxSignalInfo;
 class OfdmaManager;
+class CtrlTriggerHeader;
 
 typedef std::map <uint16_t /* staId */, Ptr<const WifiPsdu> /* PSDU */> WifiPsduMap;
 
@@ -390,6 +391,21 @@ public:
    */
   Time GetResponseDuration (const MacLowTransmissionParameters& params,
                             WifiTxVector txVector, Ptr<const WifiMacQueueItem> mpdu) const;
+
+  /**
+   * Calculate the value to store in the UL Length field of the given MU-BAR
+   * Trigger Frame corresponding to the TX duration of the solicited HE TB PPDU
+   * containing the Block Ack frames that are responses to the current DL MU PPDU.
+   * The list of stations from which a Block Ack is expected is deduced from
+   * <i>params</i>.
+   *
+   * \param trigger the given MU-BAR Trigger Frame
+   * \param params the MacLow transmission parameters
+   *
+   * \return the value to store in the UL Length field of the Trigger Frame
+   */
+  uint16_t CalculateUlLengthForBlockAcks (CtrlTriggerHeader trigger,
+                                          const MacLowTransmissionParameters& params) const;
 
   /**
    * \param mpdu packet to send
@@ -981,19 +997,19 @@ private:
   EventId m_endTxNoAckEvent;            //!< Event for finishing transmission that does not require ACK
   EventId m_navCounterResetCtsMissed;   //!< Event to reset NAV when CTS is not received
 
-  Ptr<WifiPsdu> m_currentPacket;            //!< Current packet transmitted/to be transmitted
-  Ptr<Txop> m_currentTxop;                  //!< Current TXOP
-  MacLowTransmissionParameters m_txParams;  //!< Transmission parameters of the current packet
-  Mac48Address m_self;                      //!< Address of this MacLow (Mac48Address)
-  Mac48Address m_bssid;                     //!< BSSID address (Mac48Address)
-  Time m_ackTimeout;                        //!< ACK timeout duration
-  Time m_basicBlockAckTimeout;              //!< Basic block ACK timeout duration
-  Time m_compressedBlockAckTimeout;         //!< Compressed block ACK timeout duration
-  Time m_ctsTimeout;                        //!< CTS timeout duration
-  Time m_sifs;                              //!< Short Interframe Space (SIFS) duration
-  Time m_slotTime;                          //!< Slot duration
-  Time m_pifs;                              //!< PCF Interframe Space (PIFS) duration
-  Time m_rifs;                              //!< Reduced Interframe Space (RIFS) duration
+  std::map <uint16_t, Ptr<WifiPsdu>> m_currentPacket; //!< Current packet transmitted/to be transmitted
+  Ptr<Txop> m_currentTxop;                            //!< Current TXOP
+  MacLowTransmissionParameters m_txParams;            //!< Transmission parameters of the current packet
+  Mac48Address m_self;                                //!< Address of this MacLow (Mac48Address)
+  Mac48Address m_bssid;                               //!< BSSID address (Mac48Address)
+  Time m_ackTimeout;                                  //!< ACK timeout duration
+  Time m_basicBlockAckTimeout;                        //!< Basic block ACK timeout duration
+  Time m_compressedBlockAckTimeout;                   //!< Compressed block ACK timeout duration
+  Time m_ctsTimeout;                                  //!< CTS timeout duration
+  Time m_sifs;                                        //!< Short Interframe Space (SIFS) duration
+  Time m_slotTime;                                    //!< Slot duration
+  Time m_pifs;                                        //!< PCF Interframe Space (PIFS) duration
+  Time m_rifs;                                        //!< Reduced Interframe Space (RIFS) duration
 
   Time m_beaconInterval;   //!< Expected interval between two beacon transmissions
   Time m_cfpMaxDuration;   //!< CFP max duration

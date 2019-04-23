@@ -98,9 +98,10 @@ public:
    * does not exceed both the maximum PPDU duration allowed by the corresponding
    * modulation class (if any) and the given PPDU duration limit (if non null)
    *
-   * For now, only non-broadcast QoS Data frames can be aggregated (do not pass
-   * other types of frames to this method). MPDUs to aggregate are looked for
-   * among those with the same TID and receiver as the given MPDU.
+   * The given MPDU must be a non-broadcast QoS Data frame. MPDUs to aggregate
+   * are looked for among those with the same TID and receiver as the given MPDU.
+   * Non-QoS data frames (e.g., Trigger Frames) to be aggregated can be taken into
+   * account by passing their size as the current A-MPDU size.
    *
    * The resulting A-MPDU is returned as a vector of the constituent MPDUs
    * (including the given MPDU), which are not actually aggregated (call the
@@ -112,11 +113,13 @@ public:
    * \param mpdu the given MPDU.
    * \param txVector the TxVector used to transmit the frame
    * \param ppduDurationLimit the limit on the PPDU duration
+   * \param currentAmpduSize the current A-MPDU size
    * \return the resulting A-MPDU, if aggregation is possible.
    */
   std::vector<Ptr<WifiMacQueueItem>> GetNextAmpdu (Ptr<const WifiMacQueueItem> mpdu,
                                                    WifiTxVector txVector,
-                                                   Time ppduDurationLimit = Seconds (0)) const;
+                                                   Time ppduDurationLimit = Seconds (0),
+                                                   uint32_t currentAmpduSize = 0) const;
 
   /**
    * Set the map of EDCA queues.
