@@ -903,14 +903,14 @@ private:
    * Invoked after that a block ack request has been received. Looks for corresponding
    * block ack agreement and creates block ack bitmap on a received packets basis.
    *
-   * \param reqHdr
-   * \param originator
-   * \param duration
-   * \param blockAckReqTxMode
-   * \param rxSnr
+   * \param reqHdr the Block Ack Request header
+   * \param originator the originator MAC address
+   * \param duration the remaining NAV duration
+   * \param blockAckTxVector the transmit vector for the Block Ack response
+   * \param rxSnr the receive SNR
    */
   void SendBlockAckAfterBlockAckRequest (const CtrlBAckRequestHeader reqHdr, Mac48Address originator,
-                                         Time duration, WifiMode blockAckReqTxMode, double rxSnr);
+                                         Time duration, WifiTxVector blockAckTxVector, double rxSnr);
   /**
    * Invoked after an A-MPDU has been received. Looks for corresponding
    * block ack agreement and creates block ack bitmap on a received packets basis.
@@ -918,23 +918,23 @@ private:
    * \param tid the Traffic ID
    * \param originator the originator MAC address
    * \param duration the remaining NAV duration
-   * \param blockAckReqTxVector the transmit vector
+   * \param dataTxVector the transmit vector for the A-MPDU
    * \param rxSnr the receive SNR
    */
   void SendBlockAckAfterAmpdu (uint8_t tid, Mac48Address originator, Time duration,
-                               WifiTxVector blockAckReqTxVector, double rxSnr);
+                               WifiTxVector dataTxVector, double rxSnr);
   /**
    * This method creates block ack frame with header equals to <i>blockAck</i> and start its transmission.
    *
-   * \param blockAck
-   * \param originator
-   * \param immediate
-   * \param duration
-   * \param blockAckReqTxMode
-   * \param rxSnr
+   * \param blockAck the Block Ack response header
+   * \param originator the originator MAC address
+   * \param immediate whether it is an immediate BA agreement
+   * \param duration the remaining NAV duration
+   * \param blockAckTxVector the transmit vector for the Block Ack response
+   * \param rxSnr the receive SNR
    */
   void SendBlockAckResponse (const CtrlBAckResponseHeader* blockAck, Mac48Address originator, bool immediate,
-                             Time duration, WifiMode blockAckReqTxMode, double rxSnr);
+                             Time duration, WifiTxVector blockAckTxVector, double rxSnr);
   /**
    * Schedules the transmission of Block Ack Requests or a MU-BAR depending on
    * the current transmission parameters.

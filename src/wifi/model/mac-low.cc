@@ -948,6 +948,12 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
   Ptr<Packet> packet = mpdu->GetPacket ()->Copy ();
   uint16_t staId = GetStaId (m_self);
 
+  CtrlTriggerHeader trigger;
+  if (hdr.IsTrigger ())
+    {
+      packet->RemoveHeader (trigger);
+    }
+
   bool isPrevNavZero = IsNavZero ();
   NS_LOG_DEBUG ("duration/id=" << hdr.GetDuration ());
   NotifyNav (packet, hdr);
@@ -1101,10 +1107,27 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
           m_currentTxop->TerminateTxop ();
         }
     }
-  else if (hdr.IsBlockAckReq () && hdr.GetAddr1 () == m_self)
+  else if ((hdr.IsBlockAckReq () && hdr.GetAddr1 () == m_self)
+           || (hdr.IsTrigger () && trigger.IsMuBar ()
+               && (hdr.GetAddr1 () == m_self
+                   || (hdr.GetAddr1 ().IsBroadcast ()
+                       && trigger.FindUserInfoWithAid (GetStaId (m_self)) != trigger.end ()))))
     {
       CtrlBAckRequestHeader blockAckReq;
-      packet->RemoveHeader (blockAckReq);
+      WifiTxVector blockAckTxVector;
+      if (hdr.IsBlockAckReq ())
+        {
+          packet->RemoveHeader (blockAckReq);
+          blockAckTxVector = GetBlockAckTxVector (hdr.GetAddr2 (), txVector.GetMode ());
+        }
+      else
+        {
+          auto userInfoIt = trigger.FindUserInfoWithAid (GetStaId (m_self));
+          NS_ASSERT (userInfoIt != trigger.end ());
+          blockAckReq = userInfoIt->GetMuBarTriggerDepUserInfo ();
+          blockAckTxVector = trigger.GetHeTbTxVector (GetStaId (m_self));
+        }
+
       if (!blockAckReq.IsMultiTid ())
         {
           uint8_t tid = blockAckReq.GetTidInfo ();
@@ -1128,7 +1151,7 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
                                                         blockAckReq,
                                                         hdr.GetAddr2 (),
                                                         hdr.GetDuration (),
-                                                        txVector.GetMode (),
+                                                        blockAckTxVector,
                                                         rxSnr);
                 }
               else
@@ -2834,7 +2857,7 @@ MacLow::RxCompleteBufferedPacketsUntilFirstLost (Mac48Address originator, uint8_
 
 void
 MacLow::SendBlockAckResponse (const CtrlBAckResponseHeader* blockAck, Mac48Address originator, bool immediate,
-                              Time duration, WifiMode blockAckReqTxMode, double rxSnr)
+                              Time duration, WifiTxVector blockAckTxVector, double rxSnr)
 {
   NS_LOG_FUNCTION (this);
   Ptr<Packet> packet = Create<Packet> ();
@@ -2849,25 +2872,23 @@ MacLow::SendBlockAckResponse (const CtrlBAckResponseHeader* blockAck, Mac48Addre
   hdr.SetNoRetry ();
   hdr.SetNoMoreFragments ();
 
-  WifiTxVector blockAckReqTxVector = GetBlockAckTxVector (originator, blockAckReqTxMode);
-
   if (immediate)
     {
       m_txParams.DisableAck ();
       duration -= GetSifs ();
-      duration -= GetBlockAckDuration (blockAckReqTxVector, blockAck->GetType ());
+      duration -= GetBlockAckDuration (blockAckTxVector, blockAck->GetType ());
     }
   else
     {
       m_txParams.EnableAck ();
       duration += GetSifs ();
-      duration += GetAckDuration (originator, blockAckReqTxVector);
+      duration += GetAckDuration (originator, blockAckTxVector);
     }
   m_txParams.DisableNextData ();
 
   if (!immediate)
     {
-      StartDataTxTimers (blockAckReqTxVector);
+      StartDataTxTimers (blockAckTxVector);
     }
 
   NS_ASSERT (duration.IsPositive ());
@@ -2877,16 +2898,17 @@ MacLow::SendBlockAckResponse (const CtrlBAckResponseHeader* blockAck, Mac48Addre
   SnrTag tag;
   tag.Set (rxSnr);
   packet->AddPacketTag (tag);
-  ForwardDown (Create<const WifiPsdu> (packet, hdr), blockAckReqTxVector);
+  uint16_t staId = (blockAckTxVector.GetPreambleType () == WIFI_PREAMBLE_HE_TB ? GetStaId (m_self) : SU_STA_ID);
+  ForwardDown (WifiPsduMap ({std::make_pair (staId, Create<const WifiPsdu> (packet, hdr))}), blockAckTxVector);
 }
 
 void
-MacLow::SendBlockAckAfterAmpdu (uint8_t tid, Mac48Address originator, Time duration, WifiTxVector blockAckReqTxVector, double rxSnr)
+MacLow::SendBlockAckAfterAmpdu (uint8_t tid, Mac48Address originator, Time duration, WifiTxVector dataTxVector, double rxSnr)
 {
   NS_LOG_FUNCTION (this);
   if (!m_phy->IsStateTx () && !m_phy->IsStateRx ())
     {
-      NS_LOG_FUNCTION (this << +tid << originator << duration.As (Time::S) << blockAckReqTxVector << rxSnr);
+      NS_LOG_FUNCTION (this << +tid << originator << duration.As (Time::S) << dataTxVector << rxSnr);
       CtrlBAckResponseHeader blockAck;
       uint16_t seqNumber = 0;
       BlockAckCachesI i = m_bAckCaches.find (std::make_pair (originator, tid));
@@ -2902,9 +2924,9 @@ MacLow::SendBlockAckAfterAmpdu (uint8_t tid, Mac48Address originator, Time durat
       NS_LOG_DEBUG ("Got Implicit block Ack Req with seq " << seqNumber);
       (*i).second.FillBlockAckBitmap (&blockAck);
 
-      WifiTxVector blockAckTxVector = GetBlockAckTxVector (originator, blockAckReqTxVector.GetMode ());
+      WifiTxVector blockAckTxVector = GetBlockAckTxVector (originator, dataTxVector.GetMode (GetStaId (m_self)));
 
-      SendBlockAckResponse (&blockAck, originator, immediate, duration, blockAckTxVector.GetMode (), rxSnr);
+      SendBlockAckResponse (&blockAck, originator, immediate, duration, blockAckTxVector, rxSnr);
     }
   else
     {
@@ -2914,7 +2936,7 @@ MacLow::SendBlockAckAfterAmpdu (uint8_t tid, Mac48Address originator, Time durat
 
 void
 MacLow::SendBlockAckAfterBlockAckRequest (const CtrlBAckRequestHeader reqHdr, Mac48Address originator,
-                                          Time duration, WifiMode blockAckReqTxMode, double rxSnr)
+                                          Time duration, WifiTxVector blockAckTxVector, double rxSnr)
 {
   NS_LOG_FUNCTION (this);
   CtrlBAckResponseHeader blockAck;
@@ -2966,7 +2988,7 @@ MacLow::SendBlockAckAfterBlockAckRequest (const CtrlBAckRequestHeader reqHdr, Ma
     {
       NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
     }
-  SendBlockAckResponse (&blockAck, originator, immediate, duration, blockAckReqTxMode, rxSnr);
+  SendBlockAckResponse (&blockAck, originator, immediate, duration, blockAckTxVector, rxSnr);
 }
 
 void
@@ -3038,7 +3060,7 @@ MacLow::DeaggregateAmpduAndReceive (Ptr<WifiPsdu> psdu, RxSignalInfo rxSignalInf
                                                             txVector, rxSignalInfo.snr);
                     }
 
-                  if (firsthdr.IsAck () || firsthdr.IsBlockAck () || firsthdr.IsBlockAckReq ())
+                  if (firsthdr.IsAck () || firsthdr.IsBlockAck () || firsthdr.IsBlockAckReq () || firsthdr.IsTrigger ())
                     {
                       ReceiveOk ((*n), rxSignalInfo, txVector, ampduSubframe);
                     }
