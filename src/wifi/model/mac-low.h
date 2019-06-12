@@ -713,7 +713,7 @@ private:
    * \param type the Block ACK type
    * \return the time required to transmit the Block ACK (including preamble and FCS)
    */
-  Time GetBlockAckDuration (WifiTxVector blockAckReqTxVector, BlockAckType type) const;
+  Time GetBlockAckDuration (WifiTxVector blockAckReqTxVector, BlockAckType type, uint16_t staId = SU_STA_ID) const;
   /**
    * Return the time required to transmit the Block Ack Request to the specified address
    * given the TXVECTOR (including preamble and FCS).

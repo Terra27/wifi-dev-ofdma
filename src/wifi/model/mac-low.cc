@@ -1403,13 +1403,13 @@ MacLow::GetAckDuration (WifiTxVector ackTxVector) const
 }
 
 Time
-MacLow::GetBlockAckDuration (WifiTxVector blockAckReqTxVector, BlockAckType type) const
+MacLow::GetBlockAckDuration (WifiTxVector blockAckReqTxVector, BlockAckType type, uint16_t staId) const
 {
   /*
    * For immediate Basic BlockAck we should transmit the frame with the same WifiMode
    * as the BlockAckReq.
    */
-  return m_phy->CalculateTxDuration (GetBlockAckSize (type), blockAckReqTxVector, m_phy->GetFrequency ());
+  return m_phy->CalculateTxDuration (GetBlockAckSize (type), blockAckReqTxVector, m_phy->GetFrequency (), staId);
 }
 
 Time
@@ -2876,7 +2876,7 @@ MacLow::SendBlockAckResponse (const CtrlBAckResponseHeader* blockAck, Mac48Addre
     {
       m_txParams.DisableAck ();
       duration -= GetSifs ();
-      duration -= GetBlockAckDuration (blockAckTxVector, blockAck->GetType ());
+      duration -= GetBlockAckDuration (blockAckTxVector, blockAck->GetType (), GetStaId (m_self));
     }
   else
     {
