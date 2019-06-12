@@ -105,7 +105,8 @@ MsduAggregator::GetNextAmsdu (Mac48Address recipient, uint8_t tid,
    */
   // No check required for now, as we always set the A-MSDU Supported field to 1
 
-  WifiModulationClass modulation = txVector.GetMode ().GetModulationClass ();
+  uint16_t staId = qosTxop->GetLow ()->GetStaId (recipient);
+  WifiModulationClass modulation = txVector.GetMode (staId).GetModulationClass ();
 
   // Get the maximum size of the A-MSDU we can send to the recipient
   uint16_t maxAmsduSize = GetMaxAmsduSize (recipient, tid, modulation);
@@ -132,7 +133,8 @@ MsduAggregator::GetNextAmsdu (Mac48Address recipient, uint8_t tid,
 
       if (newAmsduSize > maxAmsduSize)
         {
-          NS_LOG_DEBUG ("No other MSDU can be aggregated: maximum A-MSDU size reached");
+          NS_LOG_DEBUG ("No other MSDU can be aggregated: maximum A-MSDU size ("
+                        << maxAmsduSize << ") reached ");
           break;
         }
 

@@ -219,7 +219,8 @@ MpduAggregator::GetNextAmpdu (Ptr<const WifiMacQueueItem> mpdu, WifiTxVector txV
   auto edcaIt = m_edca.find (QosUtilsMapTidToAc (tid));
   NS_ASSERT (edcaIt != m_edca.end ());
 
-  WifiModulationClass modulation = txVector.GetMode ().GetModulationClass ();
+  uint16_t staId = edcaIt->second->GetLow ()->GetStaId (recipient);
+  WifiModulationClass modulation = txVector.GetMode (staId).GetModulationClass ();
   uint32_t maxAmpduSize = GetMaxAmpduSize (recipient, tid, modulation);
 
   if (maxAmpduSize == 0)
