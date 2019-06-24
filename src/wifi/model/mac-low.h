@@ -936,6 +936,12 @@ private:
   void SendBlockAckResponse (const CtrlBAckResponseHeader* blockAck, Mac48Address originator, bool immediate,
                              Time duration, WifiMode blockAckReqTxMode, double rxSnr);
   /**
+   * Schedules the transmission of Block Ack Requests or a MU-BAR depending on
+   * the current transmission parameters.
+   */
+  void ScheduleBlockAckRequestsIfNeeded (void) const;
+
+  /**
    * Every time that a block ack request or a packet with ack policy equals to <i>block ack</i>
    * are received, if a relative block ack agreement exists and the value of inactivity timeout
    * is not 0, the timer is reset.

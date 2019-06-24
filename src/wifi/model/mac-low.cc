@@ -2260,6 +2260,78 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
 }
 
 void
+MacLow::ScheduleBlockAckRequestsIfNeeded (void) const
+{
+  NS_LOG_FUNCTION (this);
+
+  if (m_txParams.MustSendBlockAckRequest ())
+    {
+      // SU PPDU followed by a BAR
+      NS_ASSERT (m_currentPacket.size () == 1);
+      Ptr<QosTxop> qosTxop = DynamicCast<QosTxop> (m_currentTxop);
+      NS_ASSERT (qosTxop != 0);
+      auto bar = qosTxop->PrepareBlockAckRequest (m_currentPacket.begin ()->second->GetAddr1 (),
+                                                  *m_currentPacket.begin ()->second->GetTids ().begin ());
+      qosTxop->ScheduleBar (bar);
+    }
+  else if (m_txParams.HasDlMuAckSequence ())
+    {
+      // DL MU PPDU
+      Ptr<QosTxop> qosTxop = DynamicCast<QosTxop> (m_currentTxop);
+      NS_ASSERT (qosTxop != 0);
+      std::list<Mac48Address> list = m_txParams.GetStationsSendBlockAckRequestTo ();
+
+      // DL MU PPDU - Acknowledgment via a sequence of BAR/BA pairs
+      if (m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT)
+        {
+          // schedule the transmission of multiple Block Ack Requests
+          for (auto& psdu : m_currentPacket)
+            {
+              // search the receiver of this PSDU in the list of stations to which we send a BAR
+              auto staIt = std::find (list.begin (), list.end (), psdu.second->GetAddr1 ());
+              if (staIt != list.end ())
+                {
+                  NS_LOG_DEBUG ("Schedule Block Ack Request to " << psdu.second->GetAddr1 ());
+                  auto bar = qosTxop->PrepareBlockAckRequest (psdu.second->GetAddr1 (),
+                                                              *psdu.second->GetTids ().begin ());
+                  qosTxop->ScheduleBar (bar);
+                }
+            }
+        }
+      // DL MU PPDU - Acknowledgment via a MU-BAR and Block Acks in a HE TB PPDU
+      else if (m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_MU_BAR)
+        {
+          // schedule a MU BAR
+          NS_ASSERT (m_ofdmaManager != 0);
+
+          // build a Trigger frame that only contains the User Info fields corresponding to
+          // stations that are actually supposed to be the receiver of the MU-BAR frame.
+          // In fact, MacLow::StartTransmission may have not been able to include a PSDU
+          // for all the stations returned by the OFDMA manager and not all the receivers
+          // of a PSDU may be requested to respond with a Block Ack.
+          std::map<uint16_t, std::pair<Mac48Address, uint8_t>> recipients;
+          std::ostringstream msg;
+          for (auto& psdu : m_currentPacket)
+            {
+              // search the receiver of this PSDU in the list of stations to which we send a BAR
+              auto staIt = std::find (list.begin (), list.end (), psdu.second->GetAddr1 ());
+              if (staIt != list.end ())
+                {
+                  recipients[GetStaId (psdu.second->GetAddr1 ())] = std::make_pair (psdu.second->GetAddr1 (),
+                                                                                    *psdu.second->GetTids ().begin ());
+                  msg << psdu.second->GetAddr1 () << ", ";
+                }
+            }
+
+          NS_LOG_DEBUG ("Schedule MU BAR to " << msg.str ());
+          CtrlTriggerHeader trigger = m_ofdmaManager->GetDlOfdmaInfo ().trigger;
+          trigger.SetUlLength (CalculateUlLengthForBlockAcks (trigger, m_txParams));
+          qosTxop->ScheduleBar (qosTxop->PrepareMuBar (trigger, recipients));
+        }
+    }
+}
+
+void
 MacLow::SendDataPacket (void)
 {
   NS_LOG_FUNCTION (this);
@@ -2343,14 +2415,9 @@ MacLow::SendDataPacket (void)
           m_cfAckInfo.address = Mac48Address ();
         }
     }
-  if (m_txParams.MustSendBlockAckRequest ())
-    {
-      Ptr<QosTxop> qosTxop = DynamicCast<QosTxop> (m_currentTxop);
-      NS_ASSERT (qosTxop != 0);
-      auto bar = qosTxop->PrepareBlockAckRequest (m_currentPacket.begin ()->second->GetAddr1 (),
-                                                  *m_currentPacket.begin ()->second->GetTids ().begin ());
-      qosTxop->ScheduleBar (bar);
-    }
+
+  // Schedule the transmission of Block Ack Request(s)
+  ScheduleBlockAckRequestsIfNeeded ();
 
   // Forward down every PSDU
   ForwardDown (WifiPsduMap (m_currentPacket.begin (), m_currentPacket.end ()), m_currentTxVector);
@@ -2469,14 +2536,9 @@ MacLow::SendDataAfterCts (Time duration)
     {
       psdu.second->SetDuration (duration);
     }
-  if (m_txParams.MustSendBlockAckRequest ())
-    {
-      Ptr<QosTxop> qosTxop = DynamicCast<QosTxop> (m_currentTxop);
-      NS_ASSERT (qosTxop != 0);
-      auto bar = qosTxop->PrepareBlockAckRequest (m_currentPacket.begin ()->second->GetAddr1 (),
-                                                  *m_currentPacket.begin ()->second->GetTids ().begin ());
-      qosTxop->ScheduleBar (bar);
-    }
+
+  // Schedule the transmission of Block Ack Request(s)
+  ScheduleBlockAckRequestsIfNeeded ();
 
   // Forward down every PSDU
   ForwardDown (WifiPsduMap (m_currentPacket.begin (), m_currentPacket.end ()), m_currentTxVector);
