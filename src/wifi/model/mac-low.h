@@ -365,6 +365,18 @@ public:
                                const MacLowTransmissionParameters& params) const;
 
   /**
+   * \param item packet to send (does not include the 802.11 MAC header and checksum)
+   * \param params transmission parameters of packet.
+   * \param dataTxVector the TX vector used to send the packet
+   *
+   * This transmission time does not include the time required to transmit the frame.
+   * It only includes the time for the RTS/CTS exchange (if any) and for the Ack
+   * frame (if any).
+   */
+  Time CalculateOverheadTxTime (Ptr<const WifiMacQueueItem> item,
+                               const MacLowTransmissionParameters& params, WifiTxVector dataTxVector) const;
+
+  /**
    * Return the time required to transmit the frames (ACK, BAR+BA, etc., following
    * the policy configured in the transmit parameters) in response to the given
    * MPDU. Note that the knowledge of the MPDU is only necessary when a SU PPDU is

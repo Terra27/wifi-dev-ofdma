@@ -569,7 +569,7 @@ MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
       Time txopLimit = Seconds (0);
       if (m_currentTxop->GetTxopLimit ().IsStrictlyPositive ())
         {
-          txopLimit = m_currentTxop->GetTxopRemaining () - CalculateOverheadTxTime (mpdu, m_txParams);
+          txopLimit = m_currentTxop->GetTxopRemaining () - CalculateOverheadTxTime (mpdu, m_txParams, m_currentTxVector);
           NS_ASSERT (txopLimit.IsPositive ());
         }
 
@@ -1672,6 +1672,14 @@ Time
 MacLow::CalculateOverheadTxTime (Ptr<const WifiMacQueueItem> item,
                                  const MacLowTransmissionParameters& params) const
 {
+  WifiTxVector txVector = (item->GetHeader ().IsCtl () ? GetRtsTxVector (item) : GetDataTxVector (item));
+  return CalculateOverheadTxTime (item, params, txVector);
+}
+
+Time
+MacLow::CalculateOverheadTxTime (Ptr<const WifiMacQueueItem> item,
+                                 const MacLowTransmissionParameters& params, WifiTxVector dataTxVector) const
+{
   Time txTime = Seconds (0);
   if (params.MustSendRts ())
     {
@@ -1680,7 +1688,7 @@ MacLow::CalculateOverheadTxTime (Ptr<const WifiMacQueueItem> item,
       txTime += GetCtsDuration (item->GetHeader ().GetAddr1 (), rtsTxVector);
       txTime += Time (GetSifs () * 2);
     }
-  txTime += GetResponseDuration (params, GetDataTxVector (item), item);
+  txTime += GetResponseDuration (params, dataTxVector, item);
 
   return txTime;
 }
