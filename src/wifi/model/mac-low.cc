@@ -838,9 +838,12 @@ MacLow::IsWithinSizeAndTimeLimits (uint32_t mpduSize, Mac48Address receiver, uin
       ppduPayloadSize = GetMpduAggregator ()->GetSizeIfAggregated (mpduSize, ampduSize);
     }
 
+  NS_LOG_DEBUG ("A-MPDU size: " << ppduPayloadSize);
+
   if (maxAmpduSize > 0 && ppduPayloadSize > maxAmpduSize)
     {
-      NS_LOG_DEBUG ("the frame does not meet the constraint on max A-MPDU size");
+      NS_LOG_DEBUG ("the frame does not meet the constraint on max A-MPDU size ("
+                    << maxAmpduSize << ")");
       return false;
     }
 
@@ -848,6 +851,7 @@ MacLow::IsWithinSizeAndTimeLimits (uint32_t mpduSize, Mac48Address receiver, uin
   Time maxPpduDuration = GetPpduMaxTime (txVector.GetPreambleType ());
 
   Time txTime = m_phy->CalculateTxDuration (ppduPayloadSize, txVector, m_phy->GetFrequency (), staId);
+  NS_LOG_DEBUG ("PPDU duration: " << txTime.ToDouble (Time::MS) << "ms");
 
   if ((ppduDurationLimit.IsStrictlyPositive () && txTime > ppduDurationLimit)
       || (maxPpduDuration.IsStrictlyPositive () && txTime > maxPpduDuration))
