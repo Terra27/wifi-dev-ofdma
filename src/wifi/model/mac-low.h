@@ -365,6 +365,21 @@ public:
                                const MacLowTransmissionParameters& params) const;
 
   /**
+   * Return the time required to transmit the frames (ACK, BAR+BA, etc., following
+   * the policy configured in the transmit parameters) in response to the given
+   * MPDU. Note that the knowledge of the MPDU is only necessary when a SU PPDU is
+   * acknowledged by a normal ack and when it is needed to calculate the response
+   * to a Trigger Frame.
+   *
+   * \param params the transmission parameters
+   * \param txVector the TX vector used to transmit the frame
+   * \param mpdu the frame soliciting a response
+   * \return the time required to transmit the response (ACK, BAR+BA, etc.)
+   */
+  Time GetResponseDuration (const MacLowTransmissionParameters& params,
+                            WifiTxVector txVector, Ptr<const WifiMacQueueItem> mpdu) const;
+
+  /**
    * \param mpdu packet to send
    * \param parameters the transmission parameters to use for this packet.
    * \param txop pointer to the calling Txop.
@@ -680,17 +695,6 @@ private:
    * \return the time required to transmit the Block Ack Request (including preamble and FCS)
    */
   Time GetBlockAckRequestDuration (WifiTxVector blockAckReqTxVector, BlockAckReqType type) const;
-  /**
-   * Return the time required to transmit the response frames (ACK or BAR+BA
-   * following the policy configured in the transmit parameters).
-   *
-   * \param params the transmission parameters
-   * \param dataTxVector the TX vector used to transmit the data frame
-   * \param receiver the station from which a response is expected
-   * \return the time required to transmit the response (ACK or BAR+BA)
-   */
-  Time GetResponseDuration (const MacLowTransmissionParameters& params,
-                            WifiTxVector dataTxVector, Mac48Address receiver) const;
   /**
    * Check if CTS-to-self mechanism should be used for the current packet.
    *
