@@ -40,6 +40,8 @@
 #include "wifi-phy.h"
 #include "wifi-ack-policy-selector.h"
 #include "wifi-psdu.h"
+#include "wifi-net-device.h"
+#include "ap-wifi-mac.h"
 
 #undef NS_LOG_APPEND_CONTEXT
 #define NS_LOG_APPEND_CONTEXT if (m_low != 0) { std::clog << "[mac=" << m_low->GetAddress () << "] "; }
@@ -465,8 +467,8 @@ QosTxop::GetTransmissionParameters (Ptr<const WifiMacQueueItem> frame) const
 
   params.DisableNextData ();
 
-  // broadcast frames
-  if (recipient.IsBroadcast ())
+  // broadcast frames (except MU-BAR)
+  if (recipient.IsBroadcast () && !frame->GetHeader ().IsTrigger ())
     {
       params.DisableRts ();
       params.DisableAck ();
@@ -481,6 +483,7 @@ QosTxop::GetTransmissionParameters (Ptr<const WifiMacQueueItem> frame) const
 
   // Enable/disable RTS
   if (!frame->GetHeader ().IsBlockAckReq ()
+      && !frame->GetHeader ().IsTrigger ()
       && m_stationManager->NeedRts (recipient, &frame->GetHeader (),
                                     frame->GetPacket (), m_low->GetDataTxVector (frame))
       && !m_low->IsCfPeriod ())
@@ -490,6 +493,12 @@ QosTxop::GetTransmissionParameters (Ptr<const WifiMacQueueItem> frame) const
   else
     {
       params.DisableRts ();
+    }
+
+  CtrlTriggerHeader trigger;
+  if (frame->GetHeader ().IsTrigger ())
+    {
+      frame->GetPacket ()->PeekHeader (trigger);
     }
 
   // Select ack technique.
@@ -504,6 +513,23 @@ QosTxop::GetTransmissionParameters (Ptr<const WifiMacQueueItem> frame) const
       frame->GetPacket ()->PeekHeader (baReqHdr);
       uint8_t tid = baReqHdr.GetTidInfo ();
       params.EnableBlockAck (m_baManager->GetBlockAckType (recipient, tid));
+    }
+  else if (frame->GetHeader ().IsTrigger () && trigger.IsMuBar ())
+    {
+      Ptr<WifiNetDevice> dev = DynamicCast<WifiNetDevice> (m_low->GetPhy ()->GetDevice ());
+      NS_ASSERT (dev != 0);
+      Ptr<ApWifiMac> apMac = DynamicCast<ApWifiMac> (dev->GetMac ());
+      NS_ASSERT_MSG (apMac, "Only APs can send MU-BAR Trigger frames");
+      const std::map<uint16_t, Mac48Address>& aidAddressMap = apMac->GetStaList ();
+
+      for (auto& userInfo : trigger)
+        {
+          auto addressIt = aidAddressMap.find (userInfo.GetAid12 ());
+          NS_ASSERT_MSG (addressIt != aidAddressMap.end (), "Sending MU-BAR to unassociated station");
+          params.EnableBlockAck (addressIt->second,
+                                 m_baManager->GetBlockAckType (addressIt->second,
+                                                               userInfo.GetMuBarTriggerDepUserInfo ().GetTidInfo ()));
+        }
     }
 
   return params;
