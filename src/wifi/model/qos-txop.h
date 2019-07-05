@@ -264,9 +264,13 @@ public:
   void GotBlockAck (const CtrlBAckResponseHeader *blockAck, Mac48Address recipient, double rxSnr, WifiMode txMode, double dataSnr);
   /**
    * Event handler when a Block ACK timeout has occurred.
-   * \param nMpdus number of MPDUs sent in the A-MPDU transmission that results in a Block ACK timeout.
+   * \param psduMap SU PPDU or unacknowledged SU PPDU(s) within an MU PPDU whose transmission
+   *                resulted in a Block ACK timeout.
+   * \param params the transmission parameters
+   * \param txSuccess whether the transmission has to be considered successful despite some
+   *                  Block Acks are missing (only possible for an MU PPDU)
    */
-  void MissedBlockAck (uint8_t nMpdus);
+  void MissedBlockAck (std::map <uint16_t, Ptr<WifiPsdu>> psduMap, const MacLowTransmissionParameters& params, bool txSuccess);
   /**
    * Event handler when an ADDBA response is received.
    *
@@ -648,6 +652,13 @@ private:
    * \param tid traffic ID
    */
   void ResetBa (Mac48Address recipient, uint8_t tid);
+  /**
+   * Get the Block Ack Manager handling the given TID.
+   *
+   * \param tid the Traffic ID
+   * \returns the Block Ack Manager handling the given TID
+   */
+  Ptr<BlockAckManager> GetBaManager (uint8_t tid) const;
 
   void DoDispose (void);
   void DoInitialize (void);

@@ -125,6 +125,12 @@ QosTxop::DoDispose (void)
   Txop::DoDispose ();
 }
 
+Ptr<BlockAckManager>
+QosTxop::GetBaManager (uint8_t tid) const
+{
+  return m_low->GetEdca (tid)->m_baManager;
+}
+
 bool
 QosTxop::GetBaAgreementEstablished (Mac48Address address, uint8_t tid) const
 {
@@ -148,7 +154,7 @@ QosTxop::PrepareBlockAckRequest (Mac48Address recipient, uint8_t tid) const
 {
   NS_LOG_FUNCTION (this << recipient << +tid);
 
-  CtrlBAckRequestHeader reqHdr = m_low->GetEdca (tid)->m_baManager->GetBlockAckReqHeader (recipient, tid);
+  CtrlBAckRequestHeader reqHdr = GetBaManager (tid)->GetBlockAckReqHeader (recipient, tid);
   Ptr<Packet> bar = Create<Packet> ();
   bar->AddHeader (reqHdr);
 
@@ -186,7 +192,7 @@ QosTxop::PrepareMuBar (CtrlTriggerHeader trigger,
       rxAddress = recipient.second.first;
       uint8_t tid = recipient.second.second;
 
-      CtrlBAckRequestHeader reqHdr = m_low->GetEdca (tid)->m_baManager->GetBlockAckReqHeader (rxAddress, tid);
+      CtrlBAckRequestHeader reqHdr = GetBaManager (tid)->GetBlockAckReqHeader (rxAddress, tid);
       // Store the BAR in the Trigger Dependent User Info subfield
       userInfo.SetMuBarTriggerDepUserInfo (reqHdr);
     }
@@ -947,91 +953,157 @@ QosTxop::MissedAck (void)
 }
 
 void
-QosTxop::MissedBlockAck (uint8_t nMpdus)
+QosTxop::MissedBlockAck (std::map <uint16_t, Ptr<WifiPsdu>> psduMap, const MacLowTransmissionParameters& params,
+                         bool txSuccess)
 {
-  NS_LOG_FUNCTION (this << +nMpdus);
+  NS_LOG_FUNCTION (this << params << txSuccess);
   /*
    * If the BlockAck frame is lost, the originator may transmit a BlockAckReq
    * frame to solicit an immediate BlockAck frame or it may retransmit the Data
-   * frames. (IEEE std 802.11-2016 sec. 10.24.7.7
+   * frames. (IEEE std 802.11-2016 sec. 10.24.7.7)
    */
-  uint8_t tid = GetTid (m_currentPacket, m_currentHdr);
-  if (GetAmpduExist (m_currentHdr.GetAddr1 ()))
+  bool resetCw = txSuccess;  // Reset CW if the tx succeeded or we give up retransmitting
+
+  /* One or more Block Acks were not received in response to a MU-BAR sent as SU PPDU */
+  if (psduMap.size () == 1 && psduMap.begin ()->second->GetHeader (0).IsTrigger ())
     {
-      m_stationManager->ReportAmpduTxStatus (m_currentHdr.GetAddr1 (), tid, 0, nMpdus, 0, 0);
-    }
-  if (m_useExplicitBarAfterMissedBlockAck || m_currentHdr.IsBlockAckReq ())
-    {
-      if (NeedBarRetransmission ())
+      CtrlTriggerHeader trigger;
+      psduMap.begin ()->second->GetPayload (0)->PeekHeader (trigger);
+      NS_ASSERT (trigger.IsMuBar ());
+
+      // Find the stations which did not respond with a Block Ack and to which
+      // a BAR needs to be retransmitted
+      std::map<uint16_t, std::pair<Mac48Address, uint8_t>> recipients;
+
+      for (auto& sta : params.GetStationsReceiveBlockAckFrom ())
         {
-          NS_LOG_DEBUG ("Retransmit block ack request");
-          if (m_currentHdr.IsBlockAckReq ())
+          uint16_t staId = m_low->GetStaId (sta);
+          auto userInfoIt = trigger.FindUserInfoWithAid (staId);
+          NS_ASSERT (userInfoIt != trigger.end ());
+          CtrlBAckRequestHeader blockAckReq = userInfoIt->GetMuBarTriggerDepUserInfo ();
+          uint8_t tid = blockAckReq.GetTidInfo ();
+
+          if (GetBaManager (tid)->NeedBarRetransmission (tid, sta))
             {
-              m_currentHdr.SetRetry ();
-              UpdateFailedCw ();
-              m_cwTrace = GetCw ();
+              recipients[staId] = std::make_pair (sta, tid);
             }
-          else // missed block ack after data frame with Implicit BAR Ack policy
+          else
             {
-              Ptr<const WifiMacQueueItem> bar = PrepareBlockAckRequest (m_currentHdr.GetAddr1 (), tid);
-              ScheduleBar (bar);
-              m_currentPacket = 0;
+              NS_LOG_DEBUG ("Block Ack Request to " << sta << " failed");
+              GetBaManager (tid)->DiscardOutstandingMpdus (sta, tid);
             }
+        }
+
+      if (recipients.empty ())
+        {
+          // no BAR needs to be retransmitted, hence reset the contention window
+          NS_LOG_DEBUG ("No BAR/MU-BAR needs to be retransmitted");
+          resetCw = true;
+        }
+      else if (recipients.size () == 1)
+        {
+          // the Block Ack response is missing from one station only, then
+          // schedule a Block Ack Request
+          NS_LOG_DEBUG ("Transmit block ack request to " << recipients.begin ()->second.first);
+          ScheduleBar (PrepareBlockAckRequest (recipients.begin ()->second.first,
+                                               recipients.begin ()->second.second));
         }
       else
         {
-          NS_LOG_DEBUG ("Block Ack Request Fail");
-          //to reset the dcf.
-          m_baManager->DiscardOutstandingMpdus (m_currentHdr.GetAddr1 (), GetTid (m_currentPacket, m_currentHdr));
-          m_currentPacket = 0;
-          ResetCw ();
-          m_cwTrace = GetCw ();
+          // Schedule a new MU-BAR only containing a request for the stations from
+          // which a Block Ack has not been received. Such stations are those listed
+          // in the TX params.
+          NS_LOG_DEBUG ("Transmit a MU-BAR Trigger Frame");
+          ScheduleBar (PrepareMuBar (trigger, recipients));
         }
     }
   else
     {
-      // implicit BAR and do not use BAR after missed block ack, hence try to retransmit data frames
-      if (!NeedDataRetransmission (m_currentPacket, m_currentHdr))
+      bool giveUpRetransmittingAll = true;
+
+      for (auto& psdu : psduMap)
         {
-          NS_LOG_DEBUG ("Block Ack Fail");
-          if (!m_txFailedCallback.IsNull ())
+          UpdateCurrentPacket (*psdu.second->begin ());
+          uint8_t tid = GetTid (m_currentPacket, m_currentHdr);
+          if (GetAmpduExist (m_currentHdr.GetAddr1 ()))
             {
-              m_txFailedCallback (m_currentHdr);
+              m_stationManager->ReportAmpduTxStatus (m_currentHdr.GetAddr1 (), tid, 0, psdu.second->GetNMpdus (), 0, 0);
             }
-          if (m_currentHdr.IsAction ())
+
+          if (m_useExplicitBarAfterMissedBlockAck || m_currentHdr.IsBlockAckReq ())
             {
-              WifiActionHeader actionHdr;
-              m_currentPacket->PeekHeader (actionHdr);
-              if (actionHdr.GetCategory () == WifiActionHeader::BLOCK_ACK)
+              if (NeedBarRetransmission ())
                 {
-                  uint8_t tid = GetTid (m_currentPacket, m_currentHdr);
-                  if (m_baManager->ExistsAgreementInState (m_currentHdr.GetAddr1 (), tid, OriginatorBlockAckAgreement::PENDING))
+                  NS_LOG_DEBUG ("Retransmit block ack request");
+                  giveUpRetransmittingAll = false;
+                  if (m_currentHdr.IsBlockAckReq ())
                     {
-                      NS_LOG_DEBUG ("No ACK after ADDBA request");
-                      m_baManager->NotifyAgreementNoReply (m_currentHdr.GetAddr1 (), tid);
-                      Simulator::Schedule (m_failedAddBaTimeout, &QosTxop::ResetBa, this, m_currentHdr.GetAddr1 (), tid);
+                      m_currentHdr.SetRetry ();
+                      ScheduleBar (Create<const WifiMacQueueItem> (m_currentPacket, m_currentHdr));
+                    }
+                  else // missed block ack after data frame with Implicit BAR Ack policy
+                    {
+                      ScheduleBar (PrepareBlockAckRequest (m_currentHdr.GetAddr1 (), tid));
                     }
                 }
+              else
+                {
+                  NS_LOG_DEBUG ("Block Ack Request Fail");
+                  GetBaManager (tid)->DiscardOutstandingMpdus (m_currentHdr.GetAddr1 (), tid);
+                }
             }
-          //to reset the dcf.
-          m_baManager->DiscardOutstandingMpdus (m_currentHdr.GetAddr1 (), GetTid (m_currentPacket, m_currentHdr));
-          m_currentPacket = 0;
-          ResetCw ();
-          m_cwTrace = GetCw ();
+          else
+            {
+              // implicit BAR and do not use BAR after missed block ack, hence try to retransmit data frames
+              if (!NeedDataRetransmission (m_currentPacket, m_currentHdr))
+                {
+                  NS_LOG_DEBUG ("Block Ack Fail");
+                  if (!m_txFailedCallback.IsNull ())
+                    {
+                      m_txFailedCallback (m_currentHdr);
+                    }
+                  GetBaManager (tid)->DiscardOutstandingMpdus (m_currentHdr.GetAddr1 (), tid);
+                }
+              else
+                {
+                  NS_LOG_DEBUG ("Retransmit");
+                  giveUpRetransmittingAll = false;
+                  GetBaManager (tid)->NotifyMissedBlockAck (m_currentHdr.GetAddr1 (), tid);
+                }
+            }
+        }
+      if (giveUpRetransmittingAll)
+        {
+          // no retransmission is needed, hence reset the contention window
+          NS_LOG_DEBUG ("No BAR/QoS data frame needs to be retransmitted");
+          resetCw = true;
+        }
+    }
+  if (resetCw)
+    {
+      ResetCw ();
+    }
+  else
+    {
+      UpdateFailedCw ();
+    }
+  m_currentPacket = 0;
+  // start next packet if transmission succeeded and TXOP remains
+  if (txSuccess && GetTxopLimit ().IsStrictlyPositive () && GetTxopRemaining () > m_low->GetSifs ())
+    {
+      if (m_stationManager->GetRifsPermitted ())
+        {
+          Simulator::Schedule (m_low->GetRifs (), &QosTxop::StartNextPacket, this);
         }
       else
         {
-          NS_LOG_DEBUG ("Retransmit");
-          m_baManager->NotifyMissedBlockAck (m_currentHdr.GetAddr1 (), tid);
-          m_currentPacket = 0;
-          UpdateFailedCw ();
-          m_cwTrace = GetCw ();
+          Simulator::Schedule (m_low->GetSifs (), &QosTxop::StartNextPacket, this);
         }
     }
-  m_backoff = m_rng->GetInteger (0, GetCw ());
-  m_backoffTrace (m_backoff);
-  StartBackoffNow (m_backoff);
-  RestartAccessIfNeeded ();
+  else
+    {
+      TerminateTxop ();
+    }
 }
 
 void
@@ -1126,7 +1198,7 @@ QosTxop::NeedBarRetransmission (void)
       m_currentPacket->PeekHeader (baRespHdr);
       tid = baRespHdr.GetTidInfo ();
     }
-  return m_baManager->NeedBarRetransmission (tid, m_currentHdr.GetAddr1 ());
+  return GetBaManager (tid)->NeedBarRetransmission (tid, m_currentHdr.GetAddr1 ());
 }
 
 void

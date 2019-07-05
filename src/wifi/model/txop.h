@@ -37,6 +37,7 @@ class WifiMacQueueItem;
 class UniformRandomVariable;
 class CtrlBAckResponseHeader;
 class WifiRemoteStationManager;
+class WifiPsdu;
 
 /**
  * \brief Handle packet fragmentation and retransmissions
@@ -282,9 +283,14 @@ public:
   virtual void GotBlockAck (const CtrlBAckResponseHeader *blockAck, Mac48Address recipient, double rxSnr, WifiMode txMode, double dataSnr);
   /**
    * Event handler when a Block ACK timeout has occurred.
-   * \param nMpdus the number of MPDUs sent in the A-MPDU transmission that results in a Block ACK timeout.
+   * \param psduMap SU PPDU or unacknowledged SU PPDU(s) within an MU PPDU whose transmission
+   *                resulted in a Block ACK timeout.
+   * \param params the transmission parameters
+   * \param txSuccess whether the transmission has to be considered successful despite some
+   *                  Block Acks are missing (only possible for an MU PPDU)
    */
-  virtual void MissedBlockAck (uint8_t nMpdus);
+  virtual void MissedBlockAck (std::map <uint16_t, Ptr<WifiPsdu>> psduMap, const MacLowTransmissionParameters& params,
+                               bool txSuccess);
 
   /**
    * Start transmission for the next fragment.

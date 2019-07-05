@@ -879,7 +879,8 @@ Txop::GotBlockAck (const CtrlBAckResponseHeader *blockAck, Mac48Address recipien
 }
 
 void
-Txop::MissedBlockAck (uint8_t nMpdus)
+Txop::MissedBlockAck (std::map <uint16_t, Ptr<WifiPsdu>> psduMap, const MacLowTransmissionParameters& params,
+                      bool txSuccess)
 {
   NS_LOG_WARN ("MissedBlockAck should not be called for non QoS!");
 }

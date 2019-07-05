@@ -1024,11 +1024,21 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
   else if (hdr.IsAck ()
            && hdr.GetAddr1 () == m_self
            && m_normalAckTimeoutEvent.IsRunning ()
-           && m_txParams.MustWaitNormalAck ())
+           && (m_txParams.MustWaitNormalAck () || !m_txParams.GetStationsReceiveAckFrom ().empty ()))
     {
-      NS_ABORT_MSG_IF (m_currentPacket.size () > 1, "Received Ack when the current packet is an MU PPDU");
-
-      Ptr<WifiPsdu> psdu = m_currentPacket.begin ()->second;
+      Ptr<WifiPsdu> psdu;
+      if (!m_txParams.GetStationsReceiveAckFrom ().empty ())
+        {
+          // received ack for an S-MPDU transmitted within a DL MU PPDU
+          auto psduIt = m_currentPacket.find (GetStaId (m_txParams.GetStationsReceiveAckFrom ().front ()));
+          NS_ASSERT (psduIt != m_currentPacket.end ());
+          psdu = psduIt->second;
+        }
+      else
+        {
+          NS_ASSERT (m_currentPacket.size () == 1);
+          psdu = m_currentPacket.begin ()->second;
+        }
       NS_LOG_DEBUG ("receive ack from=" << psdu->GetAddr1 ());
       SnrTag tag;
       packet->RemovePacketTag (tag);
@@ -1041,18 +1051,12 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
                                           rxSnr, txVector.GetMode (), tag.Get (),
                                           psdu->GetSize ());
         }
-      bool gotAck = false;
-      if (m_txParams.MustWaitNormalAck ()
-          && m_normalAckTimeoutEvent.IsRunning ())
-        {
-          m_normalAckTimeoutEvent.Cancel ();
-          NotifyAckTimeoutResetNow ();
-          gotAck = true;
-        }
-      if (gotAck)
-        {
-          m_currentTxop->GotAck ();
-        }
+      // cancel the Normal Ack timer
+      m_normalAckTimeoutEvent.Cancel ();
+      NotifyAckTimeoutResetNow ();
+      // notify the Txop
+      m_currentTxop->GotAck ();
+
       if (m_txParams.HasNextPacket ())
         {
           if (m_stationManager->GetRifsPermitted ())
@@ -1064,8 +1068,7 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
               m_waitIfsEvent = Simulator::Schedule (GetSifs (), &MacLow::WaitIfsAfterEndTxFragment, this);
             }
         }
-      else if (psdu->GetHeader (0).IsQosData () && m_currentTxop->IsQosTxop () &&
-               m_currentTxop->GetTxopLimit ().IsStrictlyPositive () && m_currentTxop->GetTxopRemaining () > GetSifs ())
+      else if (m_currentTxop->GetTxopLimit ().IsStrictlyPositive () && m_currentTxop->GetTxopRemaining () > GetSifs ())
         {
           if (m_stationManager->GetRifsPermitted ())
             {
@@ -1082,7 +1085,7 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
         }
     }
   else if (hdr.IsBlockAck () && hdr.GetAddr1 () == m_self
-           && m_txParams.MustWaitBlockAck ()
+           && (m_txParams.MustWaitBlockAck () || !m_txParams.GetStationsReceiveBlockAckFrom ().empty ())
            && m_blockAckTimeoutEvent.IsRunning ())
     {
       NS_LOG_DEBUG ("got block ack from " << hdr.GetAddr2 ());
@@ -1090,25 +1093,44 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
       packet->RemovePacketTag (tag);
       CtrlBAckResponseHeader blockAck;
       packet->RemoveHeader (blockAck);
-      m_blockAckTimeoutEvent.Cancel ();
-      NotifyAckTimeoutResetNow ();
-      m_currentTxop->GotBlockAck (&blockAck, hdr.GetAddr2 (), rxSnr, txVector.GetMode (), tag.Get ());
-      // start next packet if TXOP remains, otherwise contend for accessing the channel again
-      if (m_currentTxop->IsQosTxop () && m_currentTxop->GetTxopLimit ().IsStrictlyPositive ()
-          && m_currentTxop->GetTxopRemaining () > GetSifs ())
+      // notify the QosTxop about the reception of the block ack
+      Ptr<QosTxop> qosTxop = m_edca.find (QosUtilsMapTidToAc (blockAck.GetTidInfo ()))->second;
+      qosTxop->GotBlockAck (&blockAck, hdr.GetAddr2 (), rxSnr,
+                            txVector.GetMode (GetStaId (hdr.GetAddr2 ())), tag.Get ());
+      // if this block ack was sent in response to an MU PPDU, remove the station that
+      // sent the block ack from the TX params list
+      std::list<Mac48Address> staList = m_txParams.GetStationsReceiveBlockAckFrom ();
+      if (!staList.empty ())
         {
-          if (m_stationManager->GetRifsPermitted ())
-            {
-              m_waitIfsEvent = Simulator::Schedule (GetRifs (), &MacLow::WaitIfsAfterEndTxPacket, this);
-            }
-          else
-            {
-              m_waitIfsEvent = Simulator::Schedule (GetSifs (), &MacLow::WaitIfsAfterEndTxPacket, this);
-            }
+          NS_ASSERT (std::find (staList.begin (), staList.end (), hdr.GetAddr2 ()) != staList.end ());
+          // remove the sender of the Block Ack from the list of stations which
+          // we expect a Block Ack from
+          m_txParams.DisableAck (hdr.GetAddr2 ());
         }
-      else if (m_currentTxop->IsQosTxop ())
+      // if we do not expect any other Block Ack, cancel the timer and schedule
+      // the transmission of the next frame in the TXOP, if any
+      if (m_txParams.MustWaitBlockAck () || m_txParams.GetStationsReceiveBlockAckFrom ().empty ())
         {
-          m_currentTxop->TerminateTxop ();
+          m_blockAckTimeoutEvent.Cancel ();
+          NotifyAckTimeoutResetNow ();
+
+          // start next packet if TXOP remains, otherwise contend for accessing the channel again
+          if (m_currentTxop->IsQosTxop () && m_currentTxop->GetTxopLimit ().IsStrictlyPositive ()
+              && m_currentTxop->GetTxopRemaining () > GetSifs ())
+            {
+              if (m_stationManager->GetRifsPermitted ())
+                {
+                  m_waitIfsEvent = Simulator::Schedule (GetRifs (), &MacLow::WaitIfsAfterEndTxPacket, this);
+                }
+              else
+                {
+                  m_waitIfsEvent = Simulator::Schedule (GetSifs (), &MacLow::WaitIfsAfterEndTxPacket, this);
+                }
+            }
+          else if (m_currentTxop->IsQosTxop ())
+            {
+              m_currentTxop->TerminateTxop ();
+            }
         }
     }
   else if ((hdr.IsBlockAckReq () && hdr.GetAddr1 () == m_self)
@@ -2177,7 +2199,66 @@ MacLow::BlockAckTimeout (void)
   NS_LOG_DEBUG ("block ack timeout");
   Ptr<Txop> txop = m_currentTxop;
   m_currentTxop = 0;
-  txop->MissedBlockAck (m_currentPacket.begin ()->second->GetNMpdus ());
+  // The transmission of an MU PPDU is successful if at least one Block Ack is correctly
+  // received. Determine if the transmission is successful despite some Block Acks are
+  // lost and pass the result to the QosTxop, which will use such result to decide whether
+  // to terminate the TXOP (if any) or not.
+  bool txSuccess = false;
+  auto psduMap = m_currentPacket;
+
+  if (m_currentPacket.size () == 1 && m_currentPacket.begin ()->second->GetNMpdus () == 1
+      && m_currentPacket.begin ()->second->GetHeader (0).IsTrigger ())
+    {
+      /* Acknowledgment via MU-BAR sent as SU PPDU, missed Block Ack(s) after MU-BAR */
+      NS_ASSERT (!m_txParams.GetStationsReceiveBlockAckFrom ().empty ());
+      CtrlTriggerHeader trigger;
+      m_currentPacket.begin ()->second->GetPayload (0)->PeekHeader (trigger);
+      NS_ASSERT (trigger.IsMuBar ());
+
+      // the transmission is successful if the number of stations from which we did not
+      // receive a Block Ack is less than the number of stations requested to send a Block Ack
+      if (m_txParams.GetStationsReceiveBlockAckFrom ().size () < trigger.GetNUserInfoFields ())
+        {
+          txSuccess = true;
+        }
+    }
+  else if (m_txParams.HasDlMuAckSequence () && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_AGGREGATE_TF)
+    {
+      /* Acknowledgment via aggregated MU-BAR Trigger Frames, missed Block Ack(s) after MU DL PPDU */
+      NS_ASSERT (!m_txParams.GetStationsReceiveBlockAckFrom ().empty ());
+
+      // the transmission is successful if the number of stations from which we did not
+      // receive a Block Ack is less than the number of stations requested to send a Block Ack
+      if (m_txParams.GetStationsReceiveBlockAckFrom ().size () < m_currentPacket.size ())
+        {
+          txSuccess = true;
+        }
+
+      // QosTxop::MissedBlockAck will go through all the data frames that have not
+      // been acknowledged. Hence, only add the unacknowledged ones to psduMap.
+      psduMap.clear ();
+      for (auto& sta : m_txParams.GetStationsReceiveBlockAckFrom ())
+        {
+          auto psduIt = m_currentPacket.find (GetStaId (sta));
+          NS_ASSERT (psduIt != m_currentPacket.end ());
+          psduMap.insert (*psduIt);
+        }
+    }
+  else if (m_txParams.HasDlMuAckSequence () && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT)
+    {
+      /* Acknowledgment in SU format, missed Block Ack after MU DL PPDU */
+      NS_ASSERT (m_txParams.GetStationsReceiveBlockAckFrom ().size () == 1);
+
+      // QosTxop::MissedBlockAck will go through all the data frames that have not
+      // been acknowledged. Hence, only add the unacknowledged one to psduMap.
+      psduMap.clear ();
+      Mac48Address sta = m_txParams.GetStationsReceiveBlockAckFrom ().front ();
+      auto psduIt = m_currentPacket.find (GetStaId (sta));
+      NS_ASSERT (psduIt != m_currentPacket.end ());
+      psduMap.insert (*psduIt);
+    }
+
+  txop->MissedBlockAck (psduMap, m_txParams, txSuccess);
 }
 
 void
@@ -2229,12 +2310,26 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
   Time txDuration = m_phy->CalculateTxDuration (WifiPsduMap (m_currentPacket.begin (), m_currentPacket.end ()),
                                                 dataTxVector, m_phy->GetFrequency ());
 
-  if (m_txParams.MustWaitNormalAck () && !IsCfPeriod ())
+  if ((m_txParams.MustWaitNormalAck () && !IsCfPeriod ())
+      || (m_txParams.HasDlMuAckSequence () && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT
+          && !m_txParams.GetStationsReceiveAckFrom ().empty ()))
     {
       Time timerDelay = txDuration + GetAckTimeout ();
       NS_ASSERT (m_normalAckTimeoutEvent.IsExpired ());
       NotifyAckTimeoutStartNow (timerDelay);
       m_normalAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::NormalAckTimeout, this);
+
+      // in case of DL MU transmission with one PSDU acknowledged via Normal Ack, notify
+      // the QosTxop about the PSDU being transmitted
+      if (!m_txParams.MustWaitNormalAck ())
+        {
+          auto psduIt = m_currentPacket.find (GetStaId (m_txParams.GetStationsReceiveAckFrom ().front ()));
+          NS_ASSERT (psduIt != m_currentPacket.end ());
+          NS_ASSERT (psduIt->second->IsSingle ());
+          Ptr<WifiMacQueueItem> mpdu = *psduIt->second->begin ();
+          NS_ASSERT (mpdu->GetHeader ().IsQosData ());
+          m_edca.find (QosUtilsMapTidToAc (mpdu->GetHeader ().GetQosTid ()))->second->UpdateCurrentPacket (mpdu);
+        }
     }
   else if (m_txParams.MustWaitBlockAck () && m_txParams.GetBlockAckType ().m_variant == BlockAckType::BASIC)
     {
@@ -2251,6 +2346,26 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
       NotifyAckTimeoutStartNow (timerDelay);
       m_blockAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::BlockAckTimeout, this);
     }
+  else if (!m_txParams.GetStationsReceiveBlockAckFrom ().empty ())
+    {
+      // this block covers both the case of DL_SU_FORMAT acknowledgment (if the Implicit BAR Policy
+      // is selected for one receiver) and the cases of DL_MU_BAR and DL_AGGREGATE_TF acknowledgment
+      Time timerDelay = txDuration + GetCompressedBlockAckTimeout ();
+      NS_ASSERT (m_blockAckTimeoutEvent.IsExpired ());
+      NotifyAckTimeoutStartNow (timerDelay);
+      m_blockAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::BlockAckTimeout, this);
+
+      // in case of DL MU transmission with one PSDU acknowledged via Implicit BAR policy,
+      // notify the QosTxop about the PSDU being transmitted
+      if (m_txParams.HasDlMuAckSequence () && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT)
+        {
+          auto psduIt = m_currentPacket.find (GetStaId (m_txParams.GetStationsReceiveBlockAckFrom ().front ()));
+          NS_ASSERT (psduIt != m_currentPacket.end ());
+          Ptr<WifiMacQueueItem> mpdu = *psduIt->second->begin ();
+          NS_ASSERT (mpdu->GetHeader ().IsQosData ());
+          m_edca.find (QosUtilsMapTidToAc (mpdu->GetHeader ().GetQosTid ()))->second->UpdateCurrentPacket (mpdu);
+        }
+    }
   else if (m_txParams.HasNextPacket ())
     {
       NS_ASSERT (m_waitIfsEvent.IsExpired ());
@@ -2265,9 +2380,7 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
         }
       m_waitIfsEvent = Simulator::Schedule (delay, &MacLow::WaitIfsAfterEndTxFragment, this);
     }
-  // TODO Probably the IsQosData check should be removed
-  else if (m_currentPacket.begin ()->second->GetHeader (0).IsQosData () && m_currentTxop->IsQosTxop () &&
-           m_currentTxop->GetTxopLimit ().IsStrictlyPositive () && m_currentTxop->GetTxopRemaining () > GetSifs ())
+  else if (m_currentTxop->GetTxopLimit ().IsStrictlyPositive () && m_currentTxop->GetTxopRemaining () > GetSifs ())
    {
       Time delay = txDuration;
       if (m_stationManager->GetRifsPermitted ())
