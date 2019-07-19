@@ -201,11 +201,11 @@ WifiAcMappingTest::DoRun (void)
   PointerValue ptr;
   // Get the four wifi mac queues and connect their Enqueue trace to the PacketEnqueuedInWifiMacQueue
   // method, which counts how many packets with the given ToS value have been enqueued
-  apMac->GetAttribute ("BE_Txop", ptr);
+  apMac->GetAttribute ("BK_Txop", ptr);
   ptr.Get<QosTxop> ()->GetWifiMacQueue ()->TraceConnectWithoutContext ("Enqueue",
                         MakeBoundCallback (&WifiAcMappingTest::PacketEnqueuedInWifiMacQueue, m_tos, m_WifiMacQueueCount));
 
-  apMac->GetAttribute ("BK_Txop", ptr);
+  apMac->GetAttribute ("BE_Txop", ptr);
   ptr.Get<QosTxop> ()->GetWifiMacQueue ()->TraceConnectWithoutContext ("Enqueue",
                         MakeBoundCallback (&WifiAcMappingTest::PacketEnqueuedInWifiMacQueue, m_tos, m_WifiMacQueueCount+1));
 
@@ -253,8 +253,8 @@ WifiAcMappingTestSuite::WifiAcMappingTestSuite ()
   : TestSuite ("ns3-wifi-ac-mapping", SYSTEM)
 {
   AddTestCase (new WifiAcMappingTest (0xb8, 2), TestCase::QUICK); // EF in AC_VI
-  AddTestCase (new WifiAcMappingTest (0x28, 1), TestCase::QUICK); // AF11 in AC_BK
-  AddTestCase (new WifiAcMappingTest (0x70, 0), TestCase::QUICK); // AF32 in AC_BE
+  AddTestCase (new WifiAcMappingTest (0x28, 0), TestCase::QUICK); // AF11 in AC_BK
+  AddTestCase (new WifiAcMappingTest (0x70, 1), TestCase::QUICK); // AF32 in AC_BE
   AddTestCase (new WifiAcMappingTest (0xc0, 3), TestCase::QUICK); // CS7 in AC_VO
 }
 

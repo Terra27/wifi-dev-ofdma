@@ -37,10 +37,10 @@ class QueueItem;
  */
 enum AcIndex
 {
-  /** Best Effort */
-  AC_BE = 0,
   /** Background */
-  AC_BK = 1,
+  AC_BK = 0,
+  /** Best Effort */
+  AC_BE = 1,
   /** Video */
   AC_VI = 2,
   /** Voice */
