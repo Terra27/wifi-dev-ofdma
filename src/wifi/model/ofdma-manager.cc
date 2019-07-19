@@ -24,6 +24,7 @@
 #include "ofdma-manager.h"
 #include "qos-txop.h"
 #include "he-configuration.h"
+#include "wifi-phy.h"
 
 namespace ns3 {
 
@@ -112,7 +113,6 @@ OfdmaManager::NotifyAccessGranted (Ptr<const WifiMacQueueItem> mpdu)
   if (m_TxFormat == DL_OFDMA)
     {
       m_dlInfo = ComputeDlOfdmaInfo ();
-      NS_ABORT_MSG_IF (m_dlInfo.staInfo.empty (), "No DL OFDMA info returned by OfdmaManager");
       m_dlInfo.txop = m_qosTxop[QosUtilsMapTidToAc (mpdu->GetHeader ().GetQosTid ())];
       // TODO check that RUs do not overlap?
     }
@@ -146,6 +146,57 @@ Ptr<WifiRemoteStationManager>
 OfdmaManager::GetWifiRemoteStationManager (void) const
 {
   return m_apMac->GetWifiRemoteStationManager ();
+}
+
+Time
+OfdmaManager::GetResponseDuration (const MacLowTransmissionParameters& params, WifiTxVector txVector,
+                                   CtrlTriggerHeader trigger) const
+{
+  NS_LOG_FUNCTION (this);
+  NS_ASSERT (params.HasDlMuAckSequence ());
+
+  Time response = Seconds (0);
+  switch (params.GetDlMuAckSequenceType ())
+    {
+    case DlMuAckSequenceType::DL_SU_FORMAT:
+      // Note that m_mpdu is not really used by the next call
+      response = m_low->GetResponseDuration (params, txVector, m_mpdu);
+      break;
+    case DlMuAckSequenceType::DL_MU_BAR:
+      {
+        WifiMacHeader hdr;
+        hdr.SetType (WIFI_MAC_CTL_TRIGGER);
+        hdr.SetAddr1 (Mac48Address::GetBroadcast ());
+        std::list<BlockAckReqType> barTypes;
+        for (auto& sta : params.GetStationsSendBlockAckRequestTo ())
+          {
+            barTypes.push_back (params.GetBlockAckRequestType (sta));
+          }
+        uint32_t muBarSize = GetMuBarSize (barTypes);
+
+        WifiTxVector muBarTxVector = GetWifiRemoteStationManager ()->GetRtsTxVector (hdr.GetAddr1 (), &hdr,
+                                                                                     Create<Packet> (muBarSize));
+
+        response = m_low->GetSifs () +
+                   m_low->GetPhy ()->CalculateTxDuration (muBarSize, muBarTxVector,
+                                                          m_low->GetPhy ()->GetFrequency ());
+      }
+    // do not break
+    case DlMuAckSequenceType::DL_AGGREGATE_TF:
+      {
+        NS_ASSERT (trigger.IsMuBar ());
+        response += m_low->GetSifs () +
+                    WifiPhy::ConvertLSigLengthToHeTbPpduDuration (trigger.GetUlLength (),
+                                                                  trigger.GetHeTbTxVector (trigger.begin ()->GetAid12 ()),
+                                                                  m_low->GetPhy ()->GetFrequency ());
+        break;
+      }
+    default:
+      NS_FATAL_ERROR ("Unknown DL MU ack sequence");
+      break;
+    }
+  NS_LOG_DEBUG ("Response duration: " << response.ToDouble (Time::US) << " us");
+  return response;
 }
 
 } //namespace ns3

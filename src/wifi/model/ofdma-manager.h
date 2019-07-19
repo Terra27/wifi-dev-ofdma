@@ -118,6 +118,20 @@ protected:
    * \return the station manager attached to the AP
    */
   Ptr<WifiRemoteStationManager> GetWifiRemoteStationManager (void) const;
+  /**
+   * Get the time required to transmit the frames in response to a DL MU PPDU.
+   * Note that the given <i>params</i> must indicate a DL MU acknowledgment sequence.
+   * Subclasses can call this method instead of the one provided by the MacLow,
+   * which assumes that an OFDMA Manager has already returned a MU-BAR Trigger Frame
+   * in the cases involving the transmission of such kind of frame.
+   *
+   * \param params the transmission parameters
+   * \param txVector the TX vector used to transmit the DL MU PPDU
+   * \param trigger the MU-BAR Trigger Frame prepared by the OFDMA Manager
+   * \return the time required to transmit the response
+   */
+  Time GetResponseDuration (const MacLowTransmissionParameters& params, WifiTxVector txVector,
+                            CtrlTriggerHeader trigger = CtrlTriggerHeader ()) const;
 
   virtual void DoDispose (void);
   virtual void NotifyNewAggregate (void);
