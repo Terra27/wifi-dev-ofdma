@@ -287,8 +287,10 @@ public:
   void GotDelBaFrame (const MgtDelBaHeader *delBaHdr, Mac48Address recipient);
   /**
    * Event handler when an ACK is missed.
+   * \param txSuccess whether the transmission has to be considered successful (this may
+   *                  happen in response to an S-MPDU included in a DL MU PPDU)
    */
-  void MissedAck (void);
+  void MissedAck (bool txSuccess = false);
 
   /**
    * Start transmission for the next packet if allowed by the TxopLimit.

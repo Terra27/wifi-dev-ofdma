@@ -420,6 +420,18 @@ MacLow::SetPromisc (void)
   m_promisc = true;
 }
 
+void
+MacLow::SetContinueTxopIfNoSuResponseAfterMuPpdu (bool continueTxop)
+{
+  m_continueTxopIfNoSuResponseAfterMuPpdu = continueTxop;
+}
+
+bool
+MacLow::GetContinueTxopIfNoSuResponseAfterMuPpdu () const
+{
+  return m_continueTxopIfNoSuResponseAfterMuPpdu;
+}
+
 Mac48Address
 MacLow::GetAddress (void) const
 {
@@ -2189,7 +2201,18 @@ MacLow::NormalAckTimeout (void)
   /// end of rx if there was a rx start before now.
   Ptr<Txop> txop = m_currentTxop;
   m_currentTxop = 0;
-  txop->MissedAck ();
+  // A Normal Ack may be expected in response to an S-MPDU included in a DL MU PPDU.
+  // If m_continueTxopIfNoSuResponseAfterMuPpdu is true, we should not terminate the
+  // TXOP (if any).
+  bool txSuccess = false;
+
+  if (m_continueTxopIfNoSuResponseAfterMuPpdu && m_txParams.HasDlMuAckSequence ()
+      && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT)
+    {
+      txSuccess = true;
+    }
+
+  txop->MissedAck (txSuccess);
 }
 
 void
@@ -2249,6 +2272,12 @@ MacLow::BlockAckTimeout (void)
       /* Acknowledgment in SU format, missed Block Ack after MU DL PPDU */
       NS_ASSERT (m_txParams.GetStationsReceiveBlockAckFrom ().size () == 1);
 
+      // continue the TXOP if m_continueTxopIfNoSuResponseAfterMuPpdu is true
+      if (m_continueTxopIfNoSuResponseAfterMuPpdu)
+        {
+          txSuccess = true;
+        }
+
       // QosTxop::MissedBlockAck will go through all the data frames that have not
       // been acknowledged. Hence, only add the unacknowledged one to psduMap.
       psduMap.clear ();
@@ -2256,6 +2285,31 @@ MacLow::BlockAckTimeout (void)
       auto psduIt = m_currentPacket.find (GetStaId (sta));
       NS_ASSERT (psduIt != m_currentPacket.end ());
       psduMap.insert (*psduIt);
+    }
+  else if (m_ofdmaManager != 0 && m_continueTxopIfNoSuResponseAfterMuPpdu && txop->IsQosTxop ()
+           && txop->GetTxopLimit ().IsStrictlyPositive () && txop->GetTxopRemaining () > GetSifs ()
+           && m_ofdmaManager->GetTxFormat () == OfdmaTxFormat::DL_OFDMA
+           && txop == m_ofdmaManager->GetDlOfdmaInfo ().txop)
+    {
+      // This block allows an AP to continue the TXOP even if a response expected in SU format
+      // is not received after (but not immediately after) a transmission of a DL MU PPDU.
+      // This requires that:
+      // - m_continueTxopIfNoSuResponseAfterMuPpdu is true
+      // - the AC expecting a response has a non-null TXOP Limit and there is enough remaining
+      //   time (at least a SIFS) in the current TXOP
+      // - the most recently transmitted QoS data frame is a DL MU PPDU and has been
+      //   transmitted by the AC expecting a response
+      // Also note that:
+      // - the previous two blocks address the cases of missed responses in UL MU. Hence, we
+      //   only get here if a response in SU format is missing
+      // - the OFDMA Manager is only invoked when QoS data frames are to be sent. Hence,
+      //   at any time it keeps the format of the last transmission of QoS data frames
+      // - Block Ack Requests have precedence over data frames (based on the
+      //   QosTxop behavior). Hence, a data frame can only be sent if there are no pending BARs
+      // All of the above should guarantee that, if we get here, it is because a Block Ack
+      // sent as SU PPDU in response to a DL MU PPDU (or in response to a Block Ack Request
+      // sent after not all of the PSDUs sent in a DL MU PPDU were acknowledged) was not received.
+      txSuccess = true;
     }
 
   txop->MissedBlockAck (psduMap, m_txParams, txSuccess);

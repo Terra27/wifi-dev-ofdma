@@ -586,6 +586,18 @@ RegularWifiMac::GetHeSupported () const
   return false;
 }
 
+void
+RegularWifiMac::SetContinueTxopIfNoSuResponseAfterMuPpdu (bool continueTxop)
+{
+  m_low->SetContinueTxopIfNoSuResponseAfterMuPpdu (continueTxop);
+}
+
+bool
+RegularWifiMac::GetContinueTxopIfNoSuResponseAfterMuPpdu () const
+{
+  return m_low->GetContinueTxopIfNoSuResponseAfterMuPpdu ();
+}
+
 bool
 RegularWifiMac::GetErpSupported () const
 {
@@ -1195,6 +1207,13 @@ RegularWifiMac::GetTypeId (void)
                                         &RegularWifiMac::GetRifsSupported),
                    MakeBooleanChecker (),
                    TypeId::DEPRECATED, "Use the HtConfiguration instead")
+    .AddAttribute ("ContinueTxopIfNoSuResponseAfterMuPpdu",
+                   "Whether or not a TXOP holder continues to transmit in a TXOP if a "
+                   "response expected in SU format is not received after a DL MU PPDU.",
+                   BooleanValue (false),
+                   MakeBooleanAccessor (&RegularWifiMac::SetContinueTxopIfNoSuResponseAfterMuPpdu,
+                                        &RegularWifiMac::GetContinueTxopIfNoSuResponseAfterMuPpdu),
+                   MakeBooleanChecker ())
     .AddAttribute ("Txop",
                    "The Txop object.",
                    PointerValue (),

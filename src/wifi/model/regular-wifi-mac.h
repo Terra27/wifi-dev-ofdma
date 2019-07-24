@@ -512,6 +512,21 @@ protected:
    */
   bool GetHeSupported () const;
 
+  /**
+   * Continue or terminate a TXOP if a response expected in SU format is not received
+   * after a DL MU PPDU.
+   *
+   * \param continue whether to continue a TXOP
+   */
+  void SetContinueTxopIfNoSuResponseAfterMuPpdu (bool continueTxop);
+  /**
+   * Return whether a TXOP continues if a response expected in SU format is not
+   * received after a DL MU PPDU.
+   *
+   * \return true if TXOP continues, false otherwise
+   */
+  bool GetContinueTxopIfNoSuResponseAfterMuPpdu () const;
+
 private:
   /// type conversion operator
   RegularWifiMac (const RegularWifiMac &);

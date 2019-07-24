@@ -893,10 +893,12 @@ QosTxop::GotAck (void)
 }
 
 void
-QosTxop::MissedAck (void)
+QosTxop::MissedAck (bool txSuccess)
 {
   NS_LOG_FUNCTION (this);
   NS_LOG_DEBUG ("missed ack");
+  bool resetCw = txSuccess;  // Reset CW if the tx succeeded or we give up retransmitting
+
   if (!NeedDataRetransmission (m_currentPacket, m_currentHdr))
     {
       NS_LOG_DEBUG ("Ack Fail");
@@ -926,8 +928,7 @@ QosTxop::MissedAck (void)
           m_baManager->NotifyDiscardedMpdu (Create<const WifiMacQueueItem> (m_currentPacket, m_currentHdr));
         }
       m_currentPacket = 0;
-      ResetCw ();
-      m_cwTrace = GetCw ();
+      resetCw = true;
     }
   else
     {
@@ -943,13 +944,31 @@ QosTxop::MissedAck (void)
           // let the BA manager handle its retransmission
           m_currentPacket = 0;
         }
-      UpdateFailedCw ();
-      m_cwTrace = GetCw ();
     }
-  m_backoff = m_rng->GetInteger (0, GetCw ());
-  m_backoffTrace (m_backoff);
-  StartBackoffNow (m_backoff);
-  RestartAccessIfNeeded ();
+  if (resetCw)
+    {
+      ResetCw ();
+    }
+  else
+    {
+      UpdateFailedCw ();
+    }
+  // start next packet if transmission succeeded and TXOP remains
+  if (txSuccess && GetTxopLimit ().IsStrictlyPositive () && GetTxopRemaining () > m_low->GetSifs ())
+    {
+      if (m_stationManager->GetRifsPermitted ())
+        {
+          Simulator::Schedule (m_low->GetRifs (), &QosTxop::StartNextPacket, this);
+        }
+      else
+        {
+          Simulator::Schedule (m_low->GetSifs (), &QosTxop::StartNextPacket, this);
+        }
+    }
+  else
+    {
+      TerminateTxop ();
+    }
 }
 
 void

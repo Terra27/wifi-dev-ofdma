@@ -259,8 +259,10 @@ public:
   virtual void GotAck (void);
   /**
    * Event handler when an ACK is missed.
+   * \param txSuccess whether the transmission has to be considered successful (this may
+   *                  happen in response to an S-MPDU included in a DL MU PPDU)
    */
-  virtual void MissedAck (void);
+  virtual void MissedAck (bool txSuccess = false);
   /**
    * Event handler when a CF-END frame is received.
    */

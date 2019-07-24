@@ -662,7 +662,7 @@ Txop::GotAck (void)
 }
 
 void
-Txop::MissedAck (void)
+Txop::MissedAck (bool txSuccess)
 {
   NS_LOG_FUNCTION (this);
   NS_LOG_DEBUG ("missed ack");

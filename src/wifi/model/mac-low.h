@@ -281,6 +281,21 @@ public:
   bool IsPromisc (void) const;
 
   /**
+   * Continue or terminate a TXOP if a response expected in SU format is not received
+   * after a DL MU PPDU.
+   *
+   * \param continue whether to continue a TXOP
+   */
+  void SetContinueTxopIfNoSuResponseAfterMuPpdu (bool continueTxop);
+  /**
+   * Return whether a TXOP continues if a response expected in SU format is not
+   * received after a DL MU PPDU.
+   *
+   * \return true if TXOP continues, false otherwise
+   */
+  bool GetContinueTxopIfNoSuResponseAfterMuPpdu () const;
+
+  /**
    * \param callback the callback which receives every incoming packet.
    *
    * This callback typically forwards incoming packets to
@@ -1016,6 +1031,8 @@ private:
   Time m_slotTime;                                    //!< Slot duration
   Time m_pifs;                                        //!< PCF Interframe Space (PIFS) duration
   Time m_rifs;                                        //!< Reduced Interframe Space (RIFS) duration
+  bool m_continueTxopIfNoSuResponseAfterMuPpdu;       ///< flag to continue transmitting in a TXOP if a response
+                                                      ///< in SU format is not received after a DL MU PPDU
 
   Time m_beaconInterval;   //!< Expected interval between two beacon transmissions
   Time m_cfpMaxDuration;   //!< CFP max duration
