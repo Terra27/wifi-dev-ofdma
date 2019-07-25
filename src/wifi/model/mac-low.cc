@@ -1067,7 +1067,19 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
       m_normalAckTimeoutEvent.Cancel ();
       NotifyAckTimeoutResetNow ();
       // notify the Txop
-      m_currentTxop->GotAck ();
+      if (m_txParams.MustWaitNormalAck ())
+        {
+          m_currentTxop->GotAck ();
+        }
+      else
+        {
+          // in case of S-MPDU included in MU DL PPDU, we need to notify the AC the S-MPDU
+          // belongs to (which may be different than the AC that transmitted the MU DL PPDU)
+          NS_ASSERT (psdu->GetNMpdus () == 1 && psdu->GetHeader (0).IsQosData ());
+          Ptr<QosTxop> qosTxop = m_edca[QosUtilsMapTidToAc (psdu->GetHeader (0).GetQosTid ())];
+          qosTxop->UpdateCurrentPacket (*psdu->begin ());
+          qosTxop->GotAck ();
+        }
 
       if (m_txParams.HasNextPacket ())
         {
@@ -2201,15 +2213,30 @@ MacLow::NormalAckTimeout (void)
   /// end of rx if there was a rx start before now.
   Ptr<Txop> txop = m_currentTxop;
   m_currentTxop = 0;
-  // A Normal Ack may be expected in response to an S-MPDU included in a DL MU PPDU.
-  // If m_continueTxopIfNoSuResponseAfterMuPpdu is true, we should not terminate the
-  // TXOP (if any).
   bool txSuccess = false;
 
-  if (m_continueTxopIfNoSuResponseAfterMuPpdu && m_txParams.HasDlMuAckSequence ()
-      && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT)
+  // A Normal Ack may be expected in response to an S-MPDU included in a DL MU PPDU.
+  if (m_txParams.HasDlMuAckSequence () && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT)
     {
-      txSuccess = true;
+      NS_ASSERT (m_txParams.GetStationsReceiveAckFrom ().size () == 1);
+
+      // If m_continueTxopIfNoSuResponseAfterMuPpdu is true, we should not terminate the
+      // TXOP (if any).
+      if (m_continueTxopIfNoSuResponseAfterMuPpdu)
+        {
+          txSuccess = true;
+        }
+
+      // A missed Ack must be handled by the AC that transmitted the DL MU PPDU, hence we
+      // need to notify the S-MPDU to the AC that transmitted the MU DL PPDU.
+      auto psduIt = m_currentPacket.find (GetStaId (m_txParams.GetStationsReceiveAckFrom ().front ()));
+      NS_ASSERT (psduIt != m_currentPacket.end ());
+      NS_ASSERT (psduIt->second->IsSingle ());
+      Ptr<WifiMacQueueItem> mpdu = *psduIt->second->begin ();
+      NS_ASSERT (mpdu->GetHeader ().IsQosData ());
+      Ptr<QosTxop> qosTxop = DynamicCast<QosTxop> (txop);
+      NS_ASSERT (qosTxop != 0);
+      qosTxop->UpdateCurrentPacket (mpdu);
     }
 
   txop->MissedAck (txSuccess);
@@ -2285,6 +2312,14 @@ MacLow::BlockAckTimeout (void)
       auto psduIt = m_currentPacket.find (GetStaId (sta));
       NS_ASSERT (psduIt != m_currentPacket.end ());
       psduMap.insert (*psduIt);
+
+      // A missed Block Ack must be handled by the AC that transmitted the DL MU PPDU,
+      // hence we need to and notify the A-MPDU to the AC that transmitted the MU DL PPDU.
+      Ptr<WifiMacQueueItem> mpdu = *psduIt->second->begin ();
+      NS_ASSERT (mpdu->GetHeader ().IsQosData ());
+      Ptr<QosTxop> qosTxop = DynamicCast<QosTxop> (txop);
+      NS_ASSERT (qosTxop != 0);
+      qosTxop->UpdateCurrentPacket (mpdu);
     }
   else if (m_ofdmaManager != 0 && m_continueTxopIfNoSuResponseAfterMuPpdu && txop->IsQosTxop ()
            && txop->GetTxopLimit ().IsStrictlyPositive () && txop->GetTxopRemaining () > GetSifs ()
@@ -2372,18 +2407,6 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
       NS_ASSERT (m_normalAckTimeoutEvent.IsExpired ());
       NotifyAckTimeoutStartNow (timerDelay);
       m_normalAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::NormalAckTimeout, this);
-
-      // in case of DL MU transmission with one PSDU acknowledged via Normal Ack, notify
-      // the QosTxop about the PSDU being transmitted
-      if (!m_txParams.MustWaitNormalAck ())
-        {
-          auto psduIt = m_currentPacket.find (GetStaId (m_txParams.GetStationsReceiveAckFrom ().front ()));
-          NS_ASSERT (psduIt != m_currentPacket.end ());
-          NS_ASSERT (psduIt->second->IsSingle ());
-          Ptr<WifiMacQueueItem> mpdu = *psduIt->second->begin ();
-          NS_ASSERT (mpdu->GetHeader ().IsQosData ());
-          m_edca.find (QosUtilsMapTidToAc (mpdu->GetHeader ().GetQosTid ()))->second->UpdateCurrentPacket (mpdu);
-        }
     }
   else if (m_txParams.MustWaitBlockAck () && m_txParams.GetBlockAckType ().m_variant == BlockAckType::BASIC)
     {
@@ -2408,17 +2431,6 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
       NS_ASSERT (m_blockAckTimeoutEvent.IsExpired ());
       NotifyAckTimeoutStartNow (timerDelay);
       m_blockAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::BlockAckTimeout, this);
-
-      // in case of DL MU transmission with one PSDU acknowledged via Implicit BAR policy,
-      // notify the QosTxop about the PSDU being transmitted
-      if (m_txParams.HasDlMuAckSequence () && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT)
-        {
-          auto psduIt = m_currentPacket.find (GetStaId (m_txParams.GetStationsReceiveBlockAckFrom ().front ()));
-          NS_ASSERT (psduIt != m_currentPacket.end ());
-          Ptr<WifiMacQueueItem> mpdu = *psduIt->second->begin ();
-          NS_ASSERT (mpdu->GetHeader ().IsQosData ());
-          m_edca.find (QosUtilsMapTidToAc (mpdu->GetHeader ().GetQosTid ()))->second->UpdateCurrentPacket (mpdu);
-        }
     }
   else if (m_txParams.HasNextPacket ())
     {

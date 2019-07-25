@@ -518,7 +518,7 @@ QosTxop::GetTransmissionParameters (Ptr<const WifiMacQueueItem> frame) const
       CtrlBAckRequestHeader baReqHdr;
       frame->GetPacket ()->PeekHeader (baReqHdr);
       uint8_t tid = baReqHdr.GetTidInfo ();
-      params.EnableBlockAck (m_baManager->GetBlockAckType (recipient, tid));
+      params.EnableBlockAck (GetBlockAckType (recipient, tid));
     }
   else if (frame->GetHeader ().IsTrigger () && trigger.IsMuBar ())
     {
@@ -533,8 +533,8 @@ QosTxop::GetTransmissionParameters (Ptr<const WifiMacQueueItem> frame) const
           auto addressIt = aidAddressMap.find (userInfo.GetAid12 ());
           NS_ASSERT_MSG (addressIt != aidAddressMap.end (), "Sending MU-BAR to unassociated station");
           params.EnableBlockAck (addressIt->second,
-                                 m_baManager->GetBlockAckType (addressIt->second,
-                                                               userInfo.GetMuBarTriggerDepUserInfo ().GetTidInfo ()));
+                                 GetBlockAckType (addressIt->second,
+                                                  userInfo.GetMuBarTriggerDepUserInfo ().GetTidInfo ()));
         }
     }
 
@@ -544,13 +544,13 @@ QosTxop::GetTransmissionParameters (Ptr<const WifiMacQueueItem> frame) const
 BlockAckReqType
 QosTxop::GetBlockAckReqType (Mac48Address recipient, uint8_t tid) const
 {
-  return m_baManager->GetBlockAckReqType (recipient, tid);
+  return GetBaManager (tid)->GetBlockAckReqType (recipient, tid);
 }
 
 BlockAckType
 QosTxop::GetBlockAckType (Mac48Address recipient, uint8_t tid) const
 {
-  return m_baManager->GetBlockAckType (recipient, tid);
+  return GetBaManager (tid)->GetBlockAckType (recipient, tid);
 }
 
 void
@@ -923,9 +923,10 @@ QosTxop::MissedAck (bool txSuccess)
                 }
             }
         }
-      if (GetAmpduExist (m_currentHdr.GetAddr1 ()) || m_currentHdr.IsQosData ())
+      if (m_currentHdr.IsQosData ())
         {
-          m_baManager->NotifyDiscardedMpdu (Create<const WifiMacQueueItem> (m_currentPacket, m_currentHdr));
+          auto mpdu = Create<const WifiMacQueueItem> (m_currentPacket, m_currentHdr);
+          GetBaManager (m_currentHdr.GetQosTid ())->NotifyDiscardedMpdu (mpdu);
         }
       m_currentPacket = 0;
       resetCw = true;
@@ -936,11 +937,13 @@ QosTxop::MissedAck (bool txSuccess)
       m_stationManager->ReportDataFailed (m_currentHdr.GetAddr1 (), &m_currentHdr,
                                           m_currentPacket->GetSize ());
       m_currentHdr.SetRetry ();
-      if (m_currentHdr.IsQosData () && GetBaAgreementEstablished (m_currentHdr.GetAddr1 (), m_currentHdr.GetQosTid ()))
+      if (m_currentHdr.IsQosData () &&
+          m_low->GetEdca (m_currentHdr.GetQosTid ())->GetBaAgreementEstablished (m_currentHdr.GetAddr1 (),
+                                                                                 m_currentHdr.GetQosTid ()))
         {
           // notify the BA manager that the current packet was not acknowledged
-          m_baManager->NotifyMissedAck (Create<WifiMacQueueItem> (m_currentPacket, m_currentHdr,
-                                                                  m_currentPacketTimestamp));
+          auto mpdu = Create<WifiMacQueueItem> (m_currentPacket, m_currentHdr, m_currentPacketTimestamp);
+          GetBaManager (m_currentHdr.GetQosTid ())->NotifyMissedAck (mpdu);
           // let the BA manager handle its retransmission
           m_currentPacket = 0;
         }
