@@ -50,6 +50,11 @@
 #undef NS_LOG_APPEND_CONTEXT
 #define NS_LOG_APPEND_CONTEXT std::clog << "[mac=" << m_self << "] "
 
+// Time (in nanoseconds) to be added to the PSDU duration to yield the duration
+// of the timer that is started when the PHY indicates the start of the reception
+// of a frame and we are waiting for a response.
+#define PSDU_DURATION_SAFEGUARD 400
+
 namespace ns3 {
 
 NS_LOG_COMPONENT_DEFINE ("MacLow");
@@ -878,9 +883,30 @@ MacLow::IsWithinSizeAndTimeLimits (uint32_t mpduSize, Mac48Address receiver, uin
 void
 MacLow::RxStartIndication (WifiTxVector txVector, Time psduDuration)
 {
-  NS_LOG_FUNCTION (this << txVector << psduDuration);
-  NS_LOG_DEBUG ("PSDU reception started for " << psduDuration.GetMicroSeconds () << " us (txVector:" << txVector << ")");
-  //TODO fill with the appropriate logic
+  NS_LOG_FUNCTION (this);
+  NS_LOG_DEBUG ("PSDU reception started for " << psduDuration.ToDouble (Time::US)
+                << " us (txVector: " << txVector << ")");
+  NS_ASSERT (psduDuration.IsStrictlyPositive ());
+
+  if (m_normalAckTimeoutEvent.IsRunning ())
+    {
+      // we are waiting for a Normal Ack and something arrived
+      NS_LOG_DEBUG ("Rescheduling Normal Ack timeout");
+      m_normalAckTimeoutEvent.Cancel ();
+      NotifyAckTimeoutResetNow ();
+      m_normalAckTimeoutEvent = Simulator::Schedule (psduDuration + NanoSeconds (PSDU_DURATION_SAFEGUARD),
+                                                     &MacLow::NormalAckTimeout, this);
+    }
+  else if (m_blockAckTimeoutEvent.IsRunning ())
+    {
+      // we are waiting for a Normal Ack and something arrived
+      NS_LOG_DEBUG ("Rescheduling Block Ack timeout");
+      m_blockAckTimeoutEvent.Cancel ();
+      NotifyAckTimeoutResetNow ();
+      m_blockAckTimeoutEvent = Simulator::Schedule (psduDuration + NanoSeconds (PSDU_DURATION_SAFEGUARD),
+                                                     &MacLow::BlockAckTimeout, this);
+    }
+
   return;
 }
 
@@ -2403,31 +2429,75 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
       || (m_txParams.HasDlMuAckSequence () && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT
           && !m_txParams.GetStationsReceiveAckFrom ().empty ()))
     {
-      Time timerDelay = txDuration + GetAckTimeout ();
+      // find the TX vector used to transmit the response (Normal Ack)
+      WifiTxVector ackTxVector;
+
+      if (m_txParams.MustWaitNormalAck ())
+        {
+          NS_ASSERT (m_currentPacket.size () == 1 && m_currentPacket.begin ()->second->GetNMpdus () == 1);
+          ackTxVector = GetAckTxVector (m_currentPacket.begin ()->second->GetAddr1 (),
+                                        dataTxVector.GetMode ());
+        }
+      else
+        {
+          auto txVectorUserInfo = dataTxVector.GetHeMuUserInfoMap ();
+          Mac48Address receiver = m_txParams.GetStationsReceiveAckFrom ().front ();
+          auto userInfoIt = txVectorUserInfo.find (GetStaId (receiver));
+          NS_ASSERT (userInfoIt != txVectorUserInfo.end ());
+          ackTxVector = GetAckTxVector (receiver, userInfoIt->second.mcs);
+        }
+      // the timeout duration is "aSIFSTime + aSlotTime + aRxPHYStartDelay, starting
+      // at the PHY-TXEND.confirm primitive" (section 10.3.2.9 or 10.22.2.2 of 802.11-2016).
+      // aRxPHYStartDelay equals the time to transmit the PHY header.
+      Time timerDelay = txDuration + GetSifs () + GetSlotTime () + m_phy->CalculatePlcpPreambleAndHeaderDuration (ackTxVector);
       NS_ASSERT (m_normalAckTimeoutEvent.IsExpired ());
       NotifyAckTimeoutStartNow (timerDelay);
       m_normalAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::NormalAckTimeout, this);
     }
-  else if (m_txParams.MustWaitBlockAck () && m_txParams.GetBlockAckType ().m_variant == BlockAckType::BASIC)
+  else if (m_txParams.MustWaitBlockAck () || !m_txParams.GetStationsReceiveBlockAckFrom ().empty ())
     {
-      Time timerDelay = txDuration + GetBasicBlockAckTimeout ();
-      NS_ASSERT (m_blockAckTimeoutEvent.IsExpired ());
-      NotifyAckTimeoutStartNow (timerDelay);
-      m_blockAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::BlockAckTimeout, this);
-    }
-  else if (m_txParams.MustWaitBlockAck () &&
-           m_txParams.GetBlockAckType ().m_variant == BlockAckType::COMPRESSED)
-    {
-      Time timerDelay = txDuration + GetCompressedBlockAckTimeout ();
-      NS_ASSERT (m_blockAckTimeoutEvent.IsExpired ());
-      NotifyAckTimeoutStartNow (timerDelay);
-      m_blockAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::BlockAckTimeout, this);
-    }
-  else if (!m_txParams.GetStationsReceiveBlockAckFrom ().empty ())
-    {
-      // this block covers both the case of DL_SU_FORMAT acknowledgment (if the Implicit BAR Policy
-      // is selected for one receiver) and the cases of DL_MU_BAR and DL_AGGREGATE_TF acknowledgment
-      Time timerDelay = txDuration + GetCompressedBlockAckTimeout ();
+      // find the TX vector used to transmit the response (Block Ack)
+      WifiTxVector blockAckTxVector;
+
+      if (m_txParams.MustWaitBlockAck ())
+        {
+          NS_ASSERT (m_currentPacket.size () == 1);
+          blockAckTxVector = GetBlockAckTxVector (m_currentPacket.begin ()->second->GetAddr1 (),
+                                                  dataTxVector.GetMode ());
+        }
+      else if (m_txParams.HasDlMuAckSequence () && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_SU_FORMAT)
+        {
+          /*
+           * A PSDU within an MU DL PPDU is being sent with QoS Ack Policy equal
+           * to Implicit BAR policy (acknowledgment in SU format)
+           */
+          Mac48Address receiver = m_txParams.GetStationsReceiveBlockAckFrom ().front ();
+          blockAckTxVector = GetBlockAckTxVector (receiver, dataTxVector.GetMode (GetStaId (receiver)));
+        }
+      else if (m_currentPacket.size () == 1 && m_currentPacket.begin ()->second->GetNMpdus () == 1
+               && m_currentPacket.begin ()->second->GetHeader (0).IsTrigger ())
+        {
+          /* A MU-BAR is being sent to request acknowledgment of an MU DL PPDU */
+          CtrlTriggerHeader trigger;
+          m_currentPacket.begin ()->second->GetPayload (0)->PeekHeader (trigger);
+          blockAckTxVector = trigger.GetHeTbTxVector (GetStaId (m_txParams.GetStationsReceiveBlockAckFrom ().front ()));
+        }
+      else
+        {
+          /* Each PSDU in an MU DL PPDU includes a MU-BAR Trigger Frame (as last MPDU) */
+          NS_ASSERT (m_txParams.HasDlMuAckSequence () && m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_AGGREGATE_TF);
+          // The PHY headers of the Block Acks sent as HE TB PPDU are all the same.
+          // Hence, it suffices to determine the TX vector used by one of them.
+          CtrlTriggerHeader trigger;
+          std::size_t lastMpdu = m_currentPacket.begin ()->second->GetNMpdus () - 1;
+          m_currentPacket.begin ()->second->GetPayload (lastMpdu)->PeekHeader (trigger);
+          blockAckTxVector = trigger.GetHeTbTxVector (m_currentPacket.begin ()->first);
+        }
+
+      // the timeout duration is "aSIFSTime + aSlotTime + aRxPHYStartDelay, starting
+      // at the PHY-TXEND.confirm primitive" (section 10.3.2.9 or 10.22.2.2 of 802.11-2016).
+      // aRxPHYStartDelay equals the time to transmit the PHY header.
+      Time timerDelay = txDuration + GetSifs () + GetSlotTime () + m_phy->CalculatePlcpPreambleAndHeaderDuration (blockAckTxVector);
       NS_ASSERT (m_blockAckTimeoutEvent.IsExpired ());
       NotifyAckTimeoutStartNow (timerDelay);
       m_blockAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::BlockAckTimeout, this);
