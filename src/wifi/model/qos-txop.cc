@@ -93,7 +93,7 @@ QosTxop::GetTypeId (void)
 
 QosTxop::QosTxop ()
   : m_typeOfStation (STA),
-    m_blockAckType (COMPRESSED_BLOCK_ACK),
+    m_blockAckType (BlockAckType::COMPRESSED),
     m_startTxop (Seconds (0)),
     m_isAccessRequestedForRts (false),
     m_currentIsFragmented (false)
@@ -503,11 +503,11 @@ QosTxop::GetTransmissionParameters (Ptr<const WifiMacQueueItem> frame) const
     {
       // assume a block ack variant. Later, if this frame is not aggregated,
       // the acknowledgment type will be switched to normal ack
-      if (m_blockAckType == BASIC_BLOCK_ACK)
+      if (m_blockAckType.m_variant == BlockAckType::BASIC)
         {
-          params.EnableBlockAck (BlockAckType::BASIC_BLOCK_ACK);
+          params.EnableBlockAck (BlockAckType::BASIC);
         }
-      else if (m_blockAckType == COMPRESSED_BLOCK_ACK)
+      else if (m_blockAckType.m_variant == BlockAckType::COMPRESSED)
         {
           CtrlBAckRequestHeader baReqHdr;
           frame->GetPacket ()->PeekHeader (baReqHdr);
@@ -515,14 +515,14 @@ QosTxop::GetTransmissionParameters (Ptr<const WifiMacQueueItem> frame) const
 
           if (GetBaBufferSize (recipient, tid) > 64)
             {
-              params.EnableBlockAck (BlockAckType::EXTENDED_COMPRESSED_BLOCK_ACK);
+              params.EnableBlockAck (BlockAckType::EXTENDED_COMPRESSED);
             }
           else
             {
-              params.EnableBlockAck (BlockAckType::COMPRESSED_BLOCK_ACK);
+              params.EnableBlockAck (BlockAckType::COMPRESSED);
             }
         }
-      else if (m_blockAckType == MULTI_TID_BLOCK_ACK)
+      else if (m_blockAckType.m_variant == BlockAckType::MULTI_TID)
         {
           NS_FATAL_ERROR ("Multi-tid block ack is not supported");
         }
@@ -642,7 +642,7 @@ QosTxop::NotifyAccessGranted (void)
   //With COMPRESSED_BLOCK_ACK fragmentation must be avoided.
   else if (((m_currentHdr.IsQosData () && !m_currentHdr.IsQosAmsdu ())
             || (m_currentHdr.IsData () && !m_currentHdr.IsQosData ()))
-           && (GetBlockAckThreshold () == 0 || m_blockAckType == BASIC_BLOCK_ACK)
+           && (GetBlockAckThreshold () == 0 || m_blockAckType.m_variant == BlockAckType::BASIC)
            && NeedFragmentation ())
     {
       m_currentIsFragmented = true;

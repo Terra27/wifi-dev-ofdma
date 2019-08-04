@@ -1880,7 +1880,7 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
       NotifyAckTimeoutStartNow (timerDelay);
       m_normalAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::NormalAckTimeout, this);
     }
-  else if (m_txParams.MustWaitBlockAck () && m_txParams.GetBlockAckType () == BlockAckType::BASIC_BLOCK_ACK)
+  else if (m_txParams.MustWaitBlockAck () && m_txParams.GetBlockAckType ().m_variant == BlockAckType::BASIC)
     {
       Time timerDelay = txDuration + GetBasicBlockAckTimeout ();
       NS_ASSERT (m_blockAckTimeoutEvent.IsExpired ());
@@ -1888,8 +1888,8 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
       m_blockAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::BlockAckTimeout, this);
     }
   else if (m_txParams.MustWaitBlockAck () &&
-           (m_txParams.GetBlockAckType () == BlockAckType::COMPRESSED_BLOCK_ACK
-            || m_txParams.GetBlockAckType () == BlockAckType::EXTENDED_COMPRESSED_BLOCK_ACK))
+           (m_txParams.GetBlockAckType ().m_variant == BlockAckType::COMPRESSED
+            || m_txParams.GetBlockAckType ().m_variant == BlockAckType::EXTENDED_COMPRESSED))
     {
       Time timerDelay = txDuration + GetCompressedBlockAckTimeout ();
       NS_ASSERT (m_blockAckTimeoutEvent.IsExpired ());
@@ -2493,11 +2493,11 @@ MacLow::SendBlockAckAfterAmpdu (uint8_t tid, Mac48Address originator, Time durat
       immediate = (*it).second.first.IsImmediateBlockAck ();
       if ((*it).second.first.GetBufferSize () > 64)
         {
-          blockAck.SetType (EXTENDED_COMPRESSED_BLOCK_ACK);
+          blockAck.SetType (BlockAckType::EXTENDED_COMPRESSED);
         }
       else
         {
-          blockAck.SetType (COMPRESSED_BLOCK_ACK);
+          blockAck.SetType (BlockAckType::COMPRESSED);
         }
       NS_LOG_DEBUG ("Got Implicit block Ack Req with seq " << seqNumber);
       (*i).second.FillBlockAckBitmap (&blockAck);
@@ -2531,15 +2531,15 @@ MacLow::SendBlockAckAfterBlockAckRequest (const CtrlBAckRequestHeader reqHdr, Ma
           immediate = (*it).second.first.IsImmediateBlockAck ();
           if (reqHdr.IsBasic ())
             {
-              blockAck.SetType (BASIC_BLOCK_ACK);
+              blockAck.SetType (BlockAckType::BASIC);
             }
           else if (reqHdr.IsCompressed ())
             {
-              blockAck.SetType (COMPRESSED_BLOCK_ACK);
+              blockAck.SetType (BlockAckType::COMPRESSED);
             }
           else if (reqHdr.IsExtendedCompressed ())
             {
-              blockAck.SetType (EXTENDED_COMPRESSED_BLOCK_ACK);
+              blockAck.SetType (BlockAckType::EXTENDED_COMPRESSED);
             }
           BlockAckCachesI i = m_bAckCaches.find (std::make_pair (originator, tid));
           NS_ASSERT (i != m_bAckCaches.end ());
