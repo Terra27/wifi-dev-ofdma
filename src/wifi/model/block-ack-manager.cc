@@ -123,7 +123,7 @@ BlockAckManager::CreateAgreement (const MgtAddBaRequestHeader *reqHdr, Mac48Addr
   agreement.SetWinEnd ((agreement.GetStartingSequence () + agreement.GetBufferSize () - 1) % SEQNO_SPACE_SIZE);
   agreement.SetTimeout (reqHdr->GetTimeout ());
   agreement.SetAmsduSupport (reqHdr->IsAmsduSupported ());
-  agreement.SetHtSupported (m_stationManager->GetHtSupported ());
+  agreement.SetHtSupported (m_stationManager->GetHtSupported () && m_stationManager->GetHtSupported (recipient));
   if (reqHdr->IsImmediateBlockAck ())
     {
       agreement.SetImmediateBlockAck ();
