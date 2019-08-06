@@ -280,13 +280,6 @@ public:
   void SetTxMiddle (const Ptr<MacTxMiddle> txMiddle);
 
   /**
-   * \param bAckType Type of block ack
-   *
-   * See ctrl-headers.h for more details.
-   */
-  void SetBlockAckType (BlockAckType bAckType);
-
-  /**
    * Set block ack inactivity callback
    * \param callback the block ack inactivity callback function
    */
@@ -336,6 +329,24 @@ public:
    * \returns the buffer size negociated with the recipient
    */
   uint16_t GetRecipientBufferSize (Mac48Address recipient, uint8_t tid) const;
+  /**
+   * This function returns the type of Block Acks sent to the recipient.
+   *
+   * \param tid Traffic ID
+   * \param recipient MAC address
+   *
+   * \returns the type of Block Acks sent to the recipient
+   */
+  BlockAckReqType GetBlockAckReqType (Mac48Address recipient, uint8_t tid) const;
+  /**
+   * This function returns the type of Block Acks sent by the recipient.
+   *
+   * \param tid Traffic ID
+   * \param recipient MAC address
+   *
+   * \returns the type of Block Acks sent by the recipient
+   */
+  BlockAckType GetBlockAckType (Mac48Address recipient, uint8_t tid) const;
   /**
    * This function returns the starting sequence number of the transmit window.
    *

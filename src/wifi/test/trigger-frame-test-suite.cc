@@ -111,7 +111,7 @@ TriggerFrameSerialization::DoRun (void)
   else if (m_triggerType == MU_BAR_TRIGGER)
     {
       CtrlBAckRequestHeader bar;
-      bar.SetType (BlockAckType::COMPRESSED);
+      bar.SetType (BlockAckReqType::COMPRESSED);
       bar.SetTidInfo (tidInfo1);
       bar.SetStartingSequence (startingSeq1);
       ui1.SetMuBarTriggerDepUserInfo (bar);
@@ -147,7 +147,7 @@ TriggerFrameSerialization::DoRun (void)
   else if (m_triggerType == MU_BAR_TRIGGER)
     {
       CtrlBAckRequestHeader bar;
-      bar.SetType (BlockAckType::COMPRESSED);
+      bar.SetType (BlockAckReqType::COMPRESSED);
       bar.SetTidInfo (tidInfo2);
       bar.SetStartingSequence (startingSeq2);
       ui2.SetMuBarTriggerDepUserInfo (bar);

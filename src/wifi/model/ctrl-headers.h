@@ -72,7 +72,7 @@ public:
    *
    * \param type
    */
-  void SetType (BlockAckType type);
+  void SetType (BlockAckReqType type);
   /**
    * Set Traffic ID (TID).
    *
@@ -99,7 +99,7 @@ public:
    *
    * \return type
    */
-  BlockAckType GetType (void) const;
+  BlockAckReqType GetType (void) const;
   /**
    * Return the Traffic ID (TID).
    *
@@ -178,10 +178,10 @@ private:
    * For now only non HT immediate block ack is implemented so this field
    * is here only for a future implementation of HT delayed variant.
    */
-  bool m_barAckPolicy;    ///< bar ack policy
-  BlockAckType m_baType;  ///< BA type
-  uint16_t m_tidInfo;     ///< TID info
-  uint16_t m_startingSeq; ///< starting seq
+  bool m_barAckPolicy;       ///< bar ack policy
+  BlockAckReqType m_barType; ///< BA type
+  uint16_t m_tidInfo;        ///< TID info
+  uint16_t m_startingSeq;    ///< starting seq
 };
 
 

@@ -58,9 +58,9 @@ MacLowTransmissionParameters::EnableBlockAck (BlockAckType type)
 }
 
 void
-MacLowTransmissionParameters::EnableBlockAckRequest (BlockAckType type)
+MacLowTransmissionParameters::EnableBlockAckRequest (BlockAckReqType barType, BlockAckType baType)
 {
-  m_sendBar = {SendBarType::BLOCK_ACK_REQ, type};
+  m_sendBar = {SendBarType::BLOCK_ACK_REQ, barType, baType};
 
   // Reset other member variables
   m_waitAck = {WaitAckType::NONE};
@@ -92,9 +92,9 @@ MacLowTransmissionParameters::EnableBlockAck (Mac48Address address, BlockAckType
 }
 
 void
-MacLowTransmissionParameters::EnableBlockAckRequest (Mac48Address address, BlockAckType type)
+MacLowTransmissionParameters::EnableBlockAckRequest (Mac48Address address, BlockAckReqType barType, BlockAckType baType)
 {
-  m_muSendBar[address] = {SendBarType::BLOCK_ACK_REQ, type};
+  m_muSendBar[address] = {SendBarType::BLOCK_ACK_REQ, barType, baType};
 
   // Reset other member variables
   m_muWaitAck.erase (address);
@@ -166,8 +166,13 @@ MacLowTransmissionParameters::MustWaitBlockAck (void) const
 BlockAckType
 MacLowTransmissionParameters::GetBlockAckType (void) const
 {
-  NS_ABORT_MSG_IF (m_waitAck.m_type != WaitAckType::BLOCK_ACK, "Block ack is not used");
-  return m_waitAck.m_baType;
+  if (m_waitAck.m_type == WaitAckType::BLOCK_ACK)
+    {
+      return m_waitAck.m_baType;
+    }
+
+  NS_ABORT_MSG_IF (m_sendBar.m_type != SendBarType::BLOCK_ACK_REQ, "Block ack is not used");
+  return m_sendBar.m_baType;
 }
 
 bool
@@ -176,7 +181,7 @@ MacLowTransmissionParameters::MustSendBlockAckRequest (void) const
   return (m_sendBar.m_type == SendBarType::BLOCK_ACK_REQ);
 }
 
-BlockAckType
+BlockAckReqType
 MacLowTransmissionParameters::GetBlockAckRequestType (void) const
 {
   NS_ABORT_MSG_IF (m_sendBar.m_type != SendBarType::BLOCK_ACK_REQ, "Block ack request must not be sent");
@@ -303,14 +308,22 @@ BlockAckType
 MacLowTransmissionParameters::GetBlockAckType (Mac48Address address) const
 {
   auto it = m_muWaitAck.find (address);
-  NS_ASSERT (it != m_muWaitAck.end ());
+  if (it != m_muWaitAck.end ())
+    {
+      NS_ABORT_MSG_IF (it->second.m_type != WaitAckType::BLOCK_ACK,
+                      "Block ack is not used for station " << address);
+      return it->second.m_baType;
+    }
 
-  NS_ABORT_MSG_IF (it->second.m_type != WaitAckType::BLOCK_ACK,
+  auto it2 = m_muSendBar.find (address);
+  NS_ASSERT (it2 != m_muSendBar.end ());
+
+  NS_ABORT_MSG_IF (it2->second.m_type != SendBarType::BLOCK_ACK_REQ,
                    "Block ack is not used for station " << address);
-  return it->second.m_baType;
+  return it2->second.m_baType;
 }
 
-BlockAckType
+BlockAckReqType
 MacLowTransmissionParameters::GetBlockAckRequestType (Mac48Address address) const
 {
   auto it = m_muSendBar.find (address);

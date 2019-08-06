@@ -144,7 +144,7 @@ uint32_t GetBlockAckSize (BlockAckType type);
  * \param type the Block Ack Request type
  * \return the total Block Ack Request size
  */
-uint32_t GetBlockAckRequestSize (BlockAckType type);
+uint32_t GetBlockAckRequestSize (BlockAckReqType type);
 /**
  * Return the total RTS size (including FCS trailer).
  *

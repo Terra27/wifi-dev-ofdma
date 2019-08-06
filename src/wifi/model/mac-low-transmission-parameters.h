@@ -92,11 +92,13 @@ public:
    */
   void EnableBlockAck (BlockAckType type);
   /**
-   * Schedule the transmission of a Block Ack Request of the given type.
+   * A Block Ack Request of the given type will be transmitted, followed by a
+   * Block Ack of the given type.
    *
-   * \param type the Block Ack Request type
+   * \param barType the Block Ack Request type
+   * \param baType the type of the Block Ack solicited by the Block Ack Request
    */
-  void EnableBlockAckRequest (BlockAckType type);
+  void EnableBlockAckRequest (BlockAckReqType barType, BlockAckType baType);
   /**
    * Send a RTS, and wait CTSTimeout for a CTS. If we get a
    * CTS on time, call MacLowTransmissionListener::GotCts
@@ -131,12 +133,14 @@ public:
   void EnableBlockAck (Mac48Address address, BlockAckType type);
   /**
    * For a multi-user transmission, schedule the transmission of a Block Ack Request
-   * of the given type to the given station.
+   * of the given type to the given station, followed by the reception of a Block
+   * Ack of the given type
    *
    * \param address the MAC address of the station to which a BAR has to be sent
-   * \param type the Block Ack Request type
+   * \param barType the Block Ack Request type
+   * \param baType the type of the Block Ack solicited by the Block Ack Request
    */
-  void EnableBlockAckRequest (Mac48Address address, BlockAckType type);
+  void EnableBlockAckRequest (Mac48Address address, BlockAckReqType barType, BlockAckType baType);
   /**
    * Do not wait for Ack after data transmission. Typically
    * used for Broadcast and multicast frames.
@@ -198,7 +202,7 @@ public:
    *
    * Only call this method if a block ack request must be sent.
    */
-  BlockAckType GetBlockAckRequestType (void) const;
+  BlockAckReqType GetBlockAckRequestType (void) const;
   /**
    * \returns true if RTS should be sent and CTS waited for before
    *          sending data, false otherwise.
@@ -277,7 +281,7 @@ public:
    * \param address the MAC address of the given station
    * \returns the selected Block Ack Request variant.
    */
-  BlockAckType GetBlockAckRequestType (Mac48Address address) const;
+  BlockAckReqType GetBlockAckRequestType (Mac48Address address) const;
 
 private:
   friend std::ostream &operator << (std::ostream &os, const MacLowTransmissionParameters &params);
@@ -291,7 +295,8 @@ private:
   struct SendBarType
   {
     enum {NONE, BLOCK_ACK_REQ} m_type;
-    BlockAckType m_barType;
+    BlockAckReqType m_barType;
+    BlockAckType m_baType;
   };
 
   uint32_t m_nextSize;                              //!< the next size
