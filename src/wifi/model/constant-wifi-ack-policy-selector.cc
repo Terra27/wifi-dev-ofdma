@@ -132,7 +132,7 @@ ConstantWifiAckPolicySelector::UpdateTxParams (Ptr<WifiPsdu> psdu, MacLowTransmi
       if (m_qosTxop->GetBaBufferSize (receiver, tid) > 64)
         {
           NS_LOG_DEBUG ("Scheduling an Extended Compressed block ack request");
-          params.EnableBlockAckRequest (BlockAckType::EXTENDED_COMPRESSED);
+          params.EnableBlockAckRequest ({BlockAckType::COMPRESSED, {32}});
         }
       else
         {
@@ -145,7 +145,7 @@ ConstantWifiAckPolicySelector::UpdateTxParams (Ptr<WifiPsdu> psdu, MacLowTransmi
   if (m_qosTxop->GetBaBufferSize (receiver, tid) > 64)
     {
       NS_LOG_DEBUG ("Implicitly requesting an Extended Compressed block ack");
-      params.EnableBlockAck (BlockAckType::EXTENDED_COMPRESSED);
+      params.EnableBlockAck ({BlockAckType::COMPRESSED, {32}});
     }
   else
     {

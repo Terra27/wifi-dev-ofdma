@@ -1888,8 +1888,7 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
       m_blockAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::BlockAckTimeout, this);
     }
   else if (m_txParams.MustWaitBlockAck () &&
-           (m_txParams.GetBlockAckType ().m_variant == BlockAckType::COMPRESSED
-            || m_txParams.GetBlockAckType ().m_variant == BlockAckType::EXTENDED_COMPRESSED))
+           m_txParams.GetBlockAckType ().m_variant == BlockAckType::COMPRESSED)
     {
       Time timerDelay = txDuration + GetCompressedBlockAckTimeout ();
       NS_ASSERT (m_blockAckTimeoutEvent.IsExpired ());
@@ -2494,7 +2493,7 @@ MacLow::SendBlockAckAfterAmpdu (uint8_t tid, Mac48Address originator, Time durat
       immediate = (*it).second.first.IsImmediateBlockAck ();
       if ((*it).second.first.GetBufferSize () > 64)
         {
-          blockAck.SetType (BlockAckType::EXTENDED_COMPRESSED);
+          blockAck.SetType ({BlockAckType::COMPRESSED, {32}});
         }
       else
         {
@@ -2540,7 +2539,7 @@ MacLow::SendBlockAckAfterBlockAckRequest (const CtrlBAckRequestHeader reqHdr, Ma
             }
           else if (reqHdr.IsExtendedCompressed ())
             {
-              blockAck.SetType (BlockAckType::EXTENDED_COMPRESSED);
+              blockAck.SetType ({BlockAckType::COMPRESSED, {32}});
             }
           BlockAckCachesI i = m_bAckCaches.find (std::make_pair (originator, tid));
           NS_ASSERT (i != m_bAckCaches.end ());

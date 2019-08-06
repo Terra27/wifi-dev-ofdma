@@ -22,6 +22,7 @@
 #define CTRL_HEADERS_H
 
 #include <list>
+#include <vector>
 #include "ns3/header.h"
 #include "block-ack-type.h"
 #include "trigger-frame-type.h"
@@ -342,24 +343,11 @@ public:
    */
   void SetStartingSequenceControl (uint16_t seqControl);
   /**
-   * Return the bitmap from the block ACK response header.
+   * Return a const reference to the bitmap from the block ACK response header.
    *
-   * \return the bitmap from the block ACK response header
+   * \return a const reference to the bitmap from the block ACK response header
    */
-
-  const uint16_t* GetBitmap (void) const;
-  /**
-   * Return the compressed bitmap from the block ACK response header.
-   *
-   * \return the compressed bitmap from the block ACK response header
-   */
-  uint64_t GetCompressedBitmap (void) const;
-  /**
-   * Return the extended compressed bitmap from the block ACK response header.
-   *
-   * \return the extended compressed bitmap from the block ACK response header
-   */
-  const uint64_t* GetExtendedCompressedBitmap (void) const;
+  const std::vector<uint8_t>& GetBitmap (void) const;
 
   /**
    * Reset the bitmap to 0.
@@ -427,17 +415,11 @@ private:
    * For now only non HT immediate block ack is implemented so this field
    * is here only for a future implementation of HT delayed variant.
    */
-  bool m_baAckPolicy;     ///< BA ack policy
-  BlockAckType m_baType;  ///< BA type
-  uint16_t m_tidInfo;     ///< TID info
-  uint16_t m_startingSeq; ///< starting seq
-
-  union
-  {
-    uint16_t m_bitmap[64]; ///< the block ack bitmap
-    uint64_t m_compressedBitmap; ///< the compressed block ack bitmap
-    uint64_t m_extendedCompressedBitmap[4]; ///< the extended compressed block ack bitmap
-  } bitmap; ///< bitmap union type
+  bool m_baAckPolicy;             ///< BA ack policy
+  BlockAckType m_baType;          ///< BA type
+  uint16_t m_tidInfo;             ///< TID info
+  uint16_t m_startingSeq;         ///< starting seq
+  std::vector<uint8_t> m_bitmap;  ///< block ack bitmap
 };
 
 
