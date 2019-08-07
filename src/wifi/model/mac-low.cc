@@ -2516,7 +2516,8 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
         }
       m_waitIfsEvent = Simulator::Schedule (delay, &MacLow::WaitIfsAfterEndTxFragment, this);
     }
-  else if (m_currentTxop->GetTxopLimit ().IsStrictlyPositive () && m_currentTxop->GetTxopRemaining () > GetSifs ())
+  else if (m_currentTxop->GetTxopLimit ().IsStrictlyPositive ()
+           && m_currentTxop->GetTxopRemaining () - txDuration > GetSifs ())
    {
       Time delay = txDuration;
       if (m_stationManager->GetRifsPermitted ())
