@@ -561,7 +561,11 @@ MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
   CancelAllEvents ();
   m_currentTxop = txop;
   m_txParams = params;
-  if (hdr.IsCtl ())
+  if (hdr.IsBlockAckReq ())
+    {
+      m_currentTxVector = GetBlockAckTxVector (hdr.GetAddr1 (), GetDataTxVector (mpdu).GetMode ());
+    }
+  else if (hdr.IsCtl ())
     {
       m_currentTxVector = GetRtsTxVector (mpdu);
     }
