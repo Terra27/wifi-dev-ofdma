@@ -62,10 +62,12 @@ public:
   uint16_t GetWinStart (void) const;
 
   /**
-   * Fill block ack bitmap function
-   * \param blockAckHeader the block ack bitmap
+   * Fill block ack bitmap function. For Multi-STA Block Acks, <i>index</i>
+   * identifies the Per AID TID Info subfield whose bitmap has to be filled.
+   * \param blockAckHeader the block ack header
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
    */
-  void FillBlockAckBitmap (CtrlBAckResponseHeader *blockAckHeader);
+  void FillBlockAckBitmap (CtrlBAckResponseHeader *blockAckHeader, std::size_t index = 0);
 
 
 private:

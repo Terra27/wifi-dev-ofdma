@@ -186,13 +186,14 @@ public:
    * \param rxSnr received SNR of the block ack frame itself
    * \param txMode mode of block ack frame.
    * \param dataSnr data SNR reported by remote station
+   * \param index the index of the Per AID TID Info subfield to use (Multi-STA Block Ack only)
    *
    * Invoked upon receipt of a block ack frame. Typically, this function, is called
    * by ns3::QosTxop object. Performs a check on which MPDUs, previously sent
    * with ack policy set to Block Ack, were correctly received by the recipient.
    * An acknowledged MPDU is removed from the buffer, retransmitted otherwise.
    */
-  void NotifyGotBlockAck (const CtrlBAckResponseHeader *blockAck, Mac48Address recipient, double rxSnr, WifiMode txMode, double dataSnr);
+  void NotifyGotBlockAck (const CtrlBAckResponseHeader *blockAck, Mac48Address recipient, double rxSnr, WifiMode txMode, double dataSnr, size_t index = 0);
   /**
    * \param recipient Sender of the expected block ack frame.
    * \param tid Traffic ID.

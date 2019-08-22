@@ -3242,10 +3242,10 @@ MacLow::SendBlockAckAfterAmpdu (uint8_t tid, Mac48Address originator, Time durat
 
       bool immediate = true;
       AgreementsI it = m_bAckAgreements.find (std::make_pair (originator, tid));
+      blockAck.SetType ((*it).second.first.GetBlockAckType ());
       blockAck.SetStartingSequence (seqNumber);
       blockAck.SetTidInfo (tid);
       immediate = (*it).second.first.IsImmediateBlockAck ();
-      blockAck.SetType ((*it).second.first.GetBlockAckType ());
       NS_LOG_DEBUG ("Got Implicit block Ack Req with seq " << seqNumber);
       (*i).second.FillBlockAckBitmap (&blockAck);
 
@@ -3273,10 +3273,10 @@ MacLow::SendBlockAckAfterBlockAckRequest (const CtrlBAckRequestHeader reqHdr, Ma
       AgreementsI it = m_bAckAgreements.find (std::make_pair (originator, tid));
       if (it != m_bAckAgreements.end ())
         {
+          blockAck.SetType ((*it).second.first.GetBlockAckType ());
           blockAck.SetStartingSequence (reqHdr.GetStartingSequence ());
           blockAck.SetTidInfo (tid);
           immediate = (*it).second.first.IsImmediateBlockAck ();
-          blockAck.SetType ((*it).second.first.GetBlockAckType ());
           BlockAckCachesI i = m_bAckCaches.find (std::make_pair (originator, tid));
           NS_ASSERT (i != m_bAckCaches.end ());
           (*i).second.FillBlockAckBitmap (&blockAck);

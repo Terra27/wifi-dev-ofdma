@@ -112,27 +112,27 @@ BlockAckCache::ResetPortionOfBitmap (uint16_t start, uint16_t end)
 }
 
 void
-BlockAckCache::FillBlockAckBitmap (CtrlBAckResponseHeader *blockAckHeader)
+BlockAckCache::FillBlockAckBitmap (CtrlBAckResponseHeader *blockAckHeader, std::size_t index)
 {
-  NS_LOG_FUNCTION (this << blockAckHeader);
+  NS_LOG_FUNCTION (this << blockAckHeader << index);
   if (blockAckHeader->IsBasic ())
     {
       NS_FATAL_ERROR ("Basic block ack is only partially implemented.");
     }
-  else if (blockAckHeader->IsCompressed () || blockAckHeader->IsExtendedCompressed ())
+  else if (blockAckHeader->IsCompressed () || blockAckHeader->IsExtendedCompressed () || blockAckHeader->IsMultiSta ())
     {
-      uint16_t i = blockAckHeader->GetStartingSequence ();
+      uint16_t i = blockAckHeader->GetStartingSequence (index);
       uint16_t end = (i + m_winSize - 1) % 4096;
       for (; i != end; i = (i + 1) % 4096)
         {
           if (m_bitmap[i] == 1)
             {
-              blockAckHeader->SetReceivedPacket (i);
+              blockAckHeader->SetReceivedPacket (i, index);
             }
         }
       if (m_bitmap[i] == 1)
         {
-          blockAckHeader->SetReceivedPacket (i);
+          blockAckHeader->SetReceivedPacket (i, index);
         }
     }
   else if (blockAckHeader->IsMultiTid ())

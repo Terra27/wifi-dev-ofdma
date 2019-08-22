@@ -409,12 +409,12 @@ BlockAckManager::NotifyMissedAck (Ptr<WifiMacQueueItem> mpdu)
 }
 
 void
-BlockAckManager::NotifyGotBlockAck (const CtrlBAckResponseHeader *blockAck, Mac48Address recipient, double rxSnr, WifiMode txMode, double dataSnr)
+BlockAckManager::NotifyGotBlockAck (const CtrlBAckResponseHeader *blockAck, Mac48Address recipient, double rxSnr, WifiMode txMode, double dataSnr, size_t index)
 {
   NS_LOG_FUNCTION (this << blockAck << recipient << rxSnr << txMode.GetUniqueName () << dataSnr);
   if (!blockAck->IsMultiTid ())
     {
-      uint8_t tid = blockAck->GetTidInfo ();
+      uint8_t tid = blockAck->GetTidInfo (index);
       if (ExistsAgreementInState (recipient, tid, OriginatorBlockAckAgreement::ESTABLISHED))
         {
           bool foundFirstLost = false;
@@ -468,12 +468,12 @@ BlockAckManager::NotifyGotBlockAck (const CtrlBAckResponseHeader *blockAck, Mac4
                   RemoveOldPackets (recipient, tid, (currentSeq + 1) % SEQNO_SPACE_SIZE);
                 }
             }
-          else if (blockAck->IsCompressed () || blockAck->IsExtendedCompressed ())
+          else if (blockAck->IsCompressed () || blockAck->IsExtendedCompressed () || blockAck->IsMultiSta ())
             {
               for (PacketQueueI queueIt = it->second.second.begin (); queueIt != queueEnd; )
                 {
                   currentSeq = (*queueIt)->GetHeader ().GetSequenceNumber ();
-                  if (blockAck->IsPacketReceived (currentSeq))
+                  if (blockAck->IsPacketReceived (currentSeq, index))
                     {
                       it->second.first.NotifyAckedMpdu (*queueIt);
                       nSuccessfulMpdus++;

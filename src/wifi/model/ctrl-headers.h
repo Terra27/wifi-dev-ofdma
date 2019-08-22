@@ -28,6 +28,7 @@
 #include "trigger-frame-type.h"
 #include "he-ru.h"
 #include "qos-utils.h"
+#include "ns3/mac48-address.h"
 
 namespace ns3 {
 
@@ -226,18 +227,25 @@ public:
    */
   void SetType (BlockAckType type);
   /**
-   * Set Traffic ID (TID).
+   * For Block Ack variants other than Multi-STA Block Ack, set the TID_INFO subfield
+   * of the BA Control field. For Multi-STA Block Acks, set the TID subfield of the
+   * AID TID Info subfield of the Per AID TID Info subfield identified by the given
+   * index.
    *
-   * \param tid
+   * \param tid the Traffic ID
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
    */
-  void SetTidInfo (uint8_t tid);
+  void SetTidInfo (uint8_t tid, std::size_t index = 0);
   /**
-   * Set the starting sequence number from the given
-   * raw sequence control field.
+   * For Block Ack variants other than Multi-STA Block Ack, set the starting sequence
+   * number to the given value. For Multi-STA Block Acks, set the starting sequence
+   * number in the Per AID TID Info subfield identified by the given index to the
+   * given value.
    *
-   * \param seq the raw sequence control
+   * \param seq the starting sequence number
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
    */
-  void SetStartingSequence (uint16_t seq);
+  void SetStartingSequence (uint16_t seq, std::size_t index = 0);
 
   /**
    * Check if the current ACK policy is immediate.
@@ -253,17 +261,24 @@ public:
    */
   BlockAckType GetType (void) const;
   /**
-   * Return the Traffic ID (TID).
+   * For Block Ack variants other than Multi-STA Block Ack, get the TID_INFO subfield
+   * of the BA Control field. For Multi-STA Block Acks, get the TID subfield of the
+   * AID TID Info subfield of the Per AID TID Info subfield identified by the given
+   * index.
    *
-   * \return TID
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
+   * \return the Traffic ID
    */
-  uint8_t GetTidInfo (void) const;
+  uint8_t GetTidInfo (std::size_t index = 0) const;
   /**
-   * Return the starting sequence number.
+   * For Block Ack variants other than Multi-STA Block Ack, get the starting sequence
+   * number. For Multi-STA Block Acks, get the starting sequence number in the
+   * Per AID TID Info subfield identified by the given index.
    *
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
    * \return the starting sequence number
    */
-  uint16_t GetStartingSequence (void) const;
+  uint16_t GetStartingSequence (std::size_t index = 0) const;
   /**
    * Check if the current BA policy is basic block ACK.
    *
@@ -292,14 +307,90 @@ public:
    *         false otherwise
    */
   bool IsMultiTid (void) const;
+  /**
+   * Check if the BA frame variant is multi-STA block ACK.
+   *
+   * \return true if the BA frame variant is multi-STA block ACK,
+   *         false otherwise
+   */
+  bool IsMultiSta (void) const;
 
   /**
-   * Set the bitmap that the packet with the given sequence
-   * number was received.
+   * For Multi-STA Block Acks, set the AID11 subfield of the Per AID TID Info
+   * subfield identified by the given index to the given value
    *
-   * \param seq
+   * \param aid the AID11 value
+   * \param index the index of the Per AID TID Info subfield
    */
-  void SetReceivedPacket (uint16_t seq);
+  void SetAid11 (uint16_t aid, std::size_t index);
+  /**
+   * For Multi-STA Block Acks, get the AID11 subfield of the Per AID TID Info
+   * subfield identified by the given index.
+   *
+   * \param index the index of the Per AID TID Info subfield
+   * \return the AID11 subfield
+   */
+  uint16_t GetAid11 (std::size_t index) const;
+  /**
+   * For Multi-STA Block Acks, set the Ack Type subfield of the Per AID TID Info
+   * subfield identified by the given index to the given value
+   *
+   * \param type the ack type value
+   * \param index the index of the Per AID TID Info subfield
+   */
+  void SetAckType (bool type, std::size_t index);
+  /**
+   * For Multi-STA Block Acks, get the Ack Type subfield of the Per AID TID Info
+   * subfield identified by the given index.
+   *
+   * \param index the index of the Per AID TID Info subfield
+   * \return the Ack Type
+   */
+  bool GetAckType (std::size_t index) const;
+  /**
+   * For Multi-STA Block Acks, set the RA subfield of the Per AID TID Info
+   * subfield (with AID11 subfield equal to 2045) identified by the given index
+   * to the given MAC address.
+   *
+   * \param ra the MAC address
+   * \param index the index of the Per AID TID Info subfield
+   */
+  void SetUnassociatedStaAddress (Mac48Address ra, std::size_t index);
+  /**
+   * For Multi-STA Block Acks, get the RA subfield of the Per AID TID Info
+   * subfield (with AID11 subfield equal to 2045) identified by the given index
+   * to the given MAC address.
+   *
+   * \param index the index of the Per AID TID Info subfield
+   * \return the MAC address stored in the RA subfield
+   */
+  Mac48Address GetUnassociatedStaAddress (std::size_t index) const;
+  /**
+   * For Multi-STA Block Acks, get the number of Per AID TID Info subfields
+   * included in this Block Ack.
+   *
+   * \return the number of Per AID TID Info subfields included in this Multti-STA Block Ack
+   */
+  std::size_t GetNPerAidTidInfoSubfields (void) const;
+  /**
+   * For Multi-STA Block Acks, get the indices of the Per AID TID Info subfields
+   * carrying the given AID in the AID11 subfield.
+   *
+   * \param aid the given AID
+   * \return a vector containing the indices of the Per AID TID Info subfields
+   *         carrying the given AID in the AID11 subfield
+   */
+  std::vector<std::size_t> FindPerAidTidInfoWithAid (uint16_t aid) const;
+
+  /**
+   * Record in the bitmap that the packet with the given sequence number was
+   * received. For Multi-STA Block Acks, <i>index</i> identifies the Per AID
+   * TID Info subfield whose bitmap has to be updated.
+   *
+   * \param seq the sequence number of the received packet
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
+   */
+  void SetReceivedPacket (uint16_t seq, std::size_t index = 0);
   /**
    * Set the bitmap that the packet with the given sequence
    * number and fragment number was received.
@@ -309,14 +400,16 @@ public:
    */
   void SetReceivedFragment (uint16_t seq, uint8_t frag);
   /**
-   * Check if the packet with the given sequence number
-   * was ACKed in this Block ACK response.
+   * Check if the packet with the given sequence number was ACKed in this
+   * Block ACK response. For Multi-STA Block Acks, <i>index</i> identifies the
+   * Per AID TID Info subfield whose bitmap has to be checked.
    *
-   * \param seq
+   * \param seq the sequence number to be checked
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
    * \return true if the packet with the given sequence number
    *         was ACKed in this Block ACK response, false otherwise
    */
-  bool IsPacketReceived (uint16_t seq) const;
+  bool IsPacketReceived (uint16_t seq, std::size_t index = 0) const;
   /**
    * Check if the packet with the given sequence number
    * and fragment number was ACKed in this Block ACK response.
@@ -330,29 +423,38 @@ public:
   bool IsFragmentReceived (uint16_t seq, uint8_t frag) const;
 
   /**
-   * Return the starting sequence control.
+   * Return the value of the Starting Sequence Control subfield. For Multi-STA
+   * Block Acks, <i>index</i> identifies the Per AID TID Info subfield whose
+   * Starting Sequence Control subfield has to be returned.
    *
-   * \return the starting sequence control
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
+   * \return the value of the Starting Sequence Control subfield
    */
-  uint16_t GetStartingSequenceControl (void) const;
+  uint16_t GetStartingSequenceControl (std::size_t index = 0) const;
   /**
-   * Set the starting sequence control with the given
-   * sequence control value
+   * Set the Starting Sequence Control subfield with the given sequence control
+   * value. For Multi-STA Block Acks, <i>index</i> identifies the Per AID TID Info
+   * subfield whose Starting Sequence Control subfield has to be set.
    *
-   * \param seqControl
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
+   * \param seqControl the sequence control value
    */
-  void SetStartingSequenceControl (uint16_t seqControl);
+  void SetStartingSequenceControl (uint16_t seqControl, std::size_t index = 0);
   /**
    * Return a const reference to the bitmap from the block ACK response header.
+   * For Multi-STA Block Acks, return a const reference to the bitmap included
+   * in the Per AID TID Info subfield identified by <i>index</i>.
    *
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
    * \return a const reference to the bitmap from the block ACK response header
    */
-  const std::vector<uint8_t>& GetBitmap (void) const;
+  const std::vector<uint8_t>& GetBitmap (std::size_t index = 0) const;
 
   /**
-   * Reset the bitmap to 0.
+   * Reset the bitmap to 0. For Multi-STA Block Acks, reset the bitmap included
+   * in the Per AID TID Info subfield identified by <i>index</i>.
    */
-  void ResetBitmap (void);
+  void ResetBitmap (std::size_t index = 0);
 
 
 private:
@@ -370,19 +472,23 @@ private:
   void SetBaControl (uint16_t bar);
 
   /**
-   * Serialize bitmap to the given buffer.
+   * Serialize bitmap to the given buffer. For Multi-STA Block Acks, <i>index</i>
+   * identifies the Per AID TID Info subfield whose bitmap has to be serialized.
    *
-   * \param start
+   * \param start iterator pointing to the beginning of the buffer to write into.
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
    * \return Buffer::Iterator to the next available buffer
    */
-  Buffer::Iterator SerializeBitmap (Buffer::Iterator start) const;
+  Buffer::Iterator SerializeBitmap (Buffer::Iterator start, std::size_t index = 0) const;
   /**
-   * Deserialize bitmap from the given buffer.
+   * Deserialize bitmap from the given buffer. For Multi-STA Block Acks, <i>index</i>
+   * identifies the Per AID TID Info subfield whose bitmap has to be deserialized.
    *
-   * \param start
+   * \param start iterator pointing to the beginning of the buffer to read from.
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
    * \return Buffer::Iterator to the next available buffer
    */
-  Buffer::Iterator DeserializeBitmap (Buffer::Iterator start);
+  Buffer::Iterator DeserializeBitmap (Buffer::Iterator start, std::size_t index = 0);
 
   /**
    * This function is used to correctly index in both bitmap
@@ -391,6 +497,7 @@ private:
    * for more details see 7.2.1.8 in IEEE 802.11n/D4.00
    *
    * \param seq the sequence number
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
    *
    * \return If we are using basic block ack, return value represents index of
    * block of 16 bits for packet having sequence number equals to <i>seq</i>.
@@ -398,16 +505,18 @@ private:
    * to set to 1 in the compressed bitmap to indicate that packet having
    * sequence number equals to <i>seq</i> was correctly received.
    */
-  uint16_t IndexInBitmap (uint16_t seq) const;
+  uint16_t IndexInBitmap (uint16_t seq, std::size_t index = 0) const;
 
   /**
-   * Checks if sequence number <i>seq</i> can be acknowledged in the bitmap.
+   * Check if sequence number <i>seq</i> can be acknowledged in the bitmap. For
+   * Multi-STA Block Acks, check if sequence number <i>seq</i> can be acknowledged
+   * in the bitmap included in the Per AID TID Info subfield identified by <i>index</i>.
    *
    * \param seq the sequence number
-   *
-   * \return
+   * \param index the index of the Per AID TID Info subfield (Multi-STA Block Ack only)
+   * \return true if the sequence number can be acknowledged in the given bitmap
    */
-  bool IsInBitmap (uint16_t seq) const;
+  bool IsInBitmap (uint16_t seq, std::size_t index = 0) const;
 
   /**
    * The lsb bit of the BA control field is used only for the
@@ -417,9 +526,26 @@ private:
    */
   bool m_baAckPolicy;             ///< BA ack policy
   BlockAckType m_baType;          ///< BA type
-  uint16_t m_tidInfo;             ///< TID info
-  uint16_t m_startingSeq;         ///< starting seq
-  std::vector<uint8_t> m_bitmap;  ///< block ack bitmap
+  uint16_t m_tidInfo;             ///< TID info (reserved if Multi-STA Block Ack)
+
+  /**
+   * The following structure can hold the BA Information field for the Basic and
+   * Compressed variants, one instance of the {Per TID Info, Block Ack Starting
+   * Sequence Control, Block Ack Bitmap} subfields for the Multi-TID variant and
+   * one instance of the Per AID TID Info subfield for the Multi-STA variant.
+   */
+  struct BaInfoInstance
+    {
+      uint16_t m_aidTidInfo;          //!< Reserved for Basic and Compressed
+                                      //!< Per TID Info subfield for Multi-TID
+                                      //!< AID TID Info subfield for Multi-STA
+      uint16_t m_startingSeq;         //!< Block Ack Starting Sequence Control subfield
+      std::vector<uint8_t> m_bitmap;  //!< block ack bitmap
+      Mac48Address m_ra;              //!< RA subfield (address of an unassociated station)
+                                      //!< for Multi-STA; reserved for other variants
+    };
+
+  std::vector<BaInfoInstance> m_baInfo;    //!< BA Information field
 };
 
 
