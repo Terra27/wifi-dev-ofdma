@@ -154,6 +154,10 @@ MacLow::GetTypeId (void)
     .SetParent<Object> ()
     .SetGroupName ("Wifi")
     .AddConstructor<MacLow> ()
+    .AddTraceSource ("ForwardDown",
+                     "The PSDU map forwarded down to the PHY along with the TX vector.",
+                     MakeTraceSourceAccessor (&MacLow::m_forwardDown),
+                     "ns3::WifiTxVector::TracedCallback")
   ;
   return tid;
 }
@@ -2184,6 +2188,7 @@ MacLow::ForwardDown (WifiPsduMap psduMap, WifiTxVector txVector)
             }
         }
     }
+  m_forwardDown (psduMap, txVector);
   m_phy->Send (psduMap, txVector);
 }
 

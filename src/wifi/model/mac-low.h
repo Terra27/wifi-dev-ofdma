@@ -26,6 +26,7 @@
 #include <map>
 #include "ns3/object.h"
 #include "ns3/nstime.h"
+#include "ns3/traced-callback.h"
 #include "channel-access-manager.h"
 #include "block-ack-cache.h"
 #include "mac-low-transmission-parameters.h"
@@ -1072,6 +1073,9 @@ private:
   WifiTxVector m_currentTxVector;        //!< TXVECTOR used for the current packet transmission
 
   CfAckInfo m_cfAckInfo; //!< Info about piggyback ACKs used in PCF
+
+  /// Traced callback: fired when PSDUs are forwarded down to the PHY
+  TracedCallback<WifiPsduMap, WifiTxVector> m_forwardDown;
 };
 
 } //namespace ns3
