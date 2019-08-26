@@ -140,6 +140,13 @@ public:
    * \returns the VHT operational channel width (in MHz).
    */
   uint16_t GetVhtOperationalChannelWidth (void) const;
+  /**
+   * Get a const reference to the list of associated stations. Each station is
+   * specified by an (association ID, MAC address) pair.
+   *
+   * \return a const reference to the list of associated stations
+   */
+  const std::map<uint16_t, Mac48Address>& GetStaList (void) const;
 
   /**
    * Assign a fixed random variable stream number to the random variables

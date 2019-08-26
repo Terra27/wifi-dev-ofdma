@@ -100,6 +100,51 @@ public:
                         std::string n10 = "", const AttributeValue &v10 = EmptyAttributeValue ());
 
   /**
+   * \param type the type of ns3::OfdmaManager to create.
+   * Valid values of the type field must be a type subclassed from OfdmaManager.
+   *
+   * \param n0 the name of the attribute to set
+   * \param v0 the value of the attribute to set
+   * \param n1 the name of the attribute to set
+   * \param v1 the value of the attribute to set
+   * \param n2 the name of the attribute to set
+   * \param v2 the value of the attribute to set
+   * \param n3 the name of the attribute to set
+   * \param v3 the value of the attribute to set
+   * \param n4 the name of the attribute to set
+   * \param v4 the value of the attribute to set
+   * \param n5 the name of the attribute to set
+   * \param v5 the value of the attribute to set
+   * \param n6 the name of the attribute to set
+   * \param v6 the value of the attribute to set
+   * \param n7 the name of the attribute to set
+   * \param v7 the value of the attribute to set
+   * \param n8 the name of the attribute to set
+   * \param v8 the value of the attribute to set
+   * \param n9 the name of the attribute to set
+   * \param v9 the value of the attribute to set
+   * \param n10 the name of the attribute to set
+   * \param v10 the value of the attribute to set
+   *
+   * All the attributes specified in this method should exist
+   * in the requested OfdmaManager.
+   * An OfdmaManager is actually created and installed only if this is an High
+   * Efficiency (HE) AP.
+   */
+  virtual void SetOfdmaManager (std::string type,
+                                std::string n0 = "", const AttributeValue &v0 = EmptyAttributeValue (),
+                                std::string n1 = "", const AttributeValue &v1 = EmptyAttributeValue (),
+                                std::string n2 = "", const AttributeValue &v2 = EmptyAttributeValue (),
+                                std::string n3 = "", const AttributeValue &v3 = EmptyAttributeValue (),
+                                std::string n4 = "", const AttributeValue &v4 = EmptyAttributeValue (),
+                                std::string n5 = "", const AttributeValue &v5 = EmptyAttributeValue (),
+                                std::string n6 = "", const AttributeValue &v6 = EmptyAttributeValue (),
+                                std::string n7 = "", const AttributeValue &v7 = EmptyAttributeValue (),
+                                std::string n8 = "", const AttributeValue &v8 = EmptyAttributeValue (),
+                                std::string n9 = "", const AttributeValue &v9 = EmptyAttributeValue (),
+                                std::string n10 = "", const AttributeValue &v10 = EmptyAttributeValue ());
+
+  /**
    * \returns a new MAC object.
    *
    * This allows the ns3::WifiHelper class to create MAC objects from ns3::WifiHelper::Install.
@@ -109,6 +154,7 @@ public:
 
 protected:
   ObjectFactory m_mac; ///< MAC object factory
+  ObjectFactory m_ofdmaManager; ///< OFDMA Manager object factory
 };
 
 } // namespace ns3

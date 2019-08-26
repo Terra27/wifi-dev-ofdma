@@ -44,6 +44,8 @@
 #include "sta-wifi-mac.h"
 #include <algorithm>
 #include "wifi-ack-policy-selector.h"
+#include "ofdma-manager.h"
+#include "he-configuration.h"
 
 #undef NS_LOG_APPEND_CONTEXT
 #define NS_LOG_APPEND_CONTEXT std::clog << "[mac=" << m_self << "] "
@@ -184,6 +186,7 @@ MacLow::DoDispose (void)
   m_endTxNoAckEvent.Cancel ();
   m_msduAggregator = 0;
   m_mpduAggregator = 0;
+  m_ofdmaManager = 0;
   m_phy = 0;
   m_stationManager = 0;
   if (m_phyMacLowListener != 0)
@@ -283,6 +286,16 @@ void
 MacLow::SetMac (const Ptr<WifiMac> mac)
 {
   m_mac = mac;
+}
+
+void
+MacLow::SetOfdmaManager (const Ptr<OfdmaManager> ofdmaManager)
+{
+  NS_ASSERT (m_mac);
+  Ptr<ApWifiMac> apMac = DynamicCast<ApWifiMac> (m_mac);
+  NS_ABORT_MSG_IF (apMac == 0, "APs only can be aggregated to OFDMA Managers");
+  NS_ABORT_MSG_IF (m_mac->GetHeConfiguration () == 0, "HE APs only can be aggregated to OFDMA Managers");
+  m_ofdmaManager = ofdmaManager;
 }
 
 void

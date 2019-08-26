@@ -219,6 +219,13 @@ ApWifiMac::SetCfpMaxDuration (Time duration)
   m_low->SetCfpMaxDuration (duration);
 }
 
+const std::map<uint16_t, Mac48Address>&
+ApWifiMac::GetStaList (void) const
+{
+  NS_LOG_FUNCTION (this);
+  return m_staList;
+}
+
 int64_t
 ApWifiMac::AssignStreams (int64_t stream)
 {

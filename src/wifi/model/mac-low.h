@@ -52,6 +52,7 @@ class CtrlBAckResponseHeader;
 class MsduAggregator;
 class MpduAggregator;
 struct RxSignalInfo;
+class OfdmaManager;
 
 typedef std::map <uint16_t /* staId */, Ptr<const WifiPsdu> /* PSDU */> WifiPsduMap;
 
@@ -102,6 +103,12 @@ public:
    * \param mac WifiMac associated with this MacLow
    */
   void SetMac (const Ptr<WifiMac> mac);
+  /**
+   * Set up the OFDMA Manager associated with this MacLow.
+   *
+   * \param ofdmaManager the OFDMA Manager associated with this MacLow
+   */
+  void SetOfdmaManager (const Ptr<OfdmaManager> ofdmaManager);
   /**
    * Set up WifiRemoteStationManager associated with this MacLow.
    *
@@ -946,6 +953,7 @@ private:
 
   Ptr<MsduAggregator> m_msduAggregator;             //!< A-MSDU aggregator
   Ptr<MpduAggregator> m_mpduAggregator;             //!< A-MPDU aggregator
+  Ptr<OfdmaManager> m_ofdmaManager;                 //!< OFDMA Manager (HE APs only)
 
   EventId m_normalAckTimeoutEvent;      //!< Normal ACK timeout event
   EventId m_blockAckTimeoutEvent;       //!< Block ACK timeout event

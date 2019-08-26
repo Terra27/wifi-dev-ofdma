@@ -20,8 +20,11 @@
 
 #include "ns3/net-device.h"
 #include "wifi-mac-helper.h"
-#include "ns3/wifi-mac.h"
+#include "ns3/ap-wifi-mac.h"
+#include "ns3/ofdma-manager.h"
+#include "ns3/he-configuration.h"
 #include "ns3/boolean.h"
+#include "ns3/pointer.h"
 
 namespace ns3 {
 
@@ -64,11 +67,47 @@ WifiMacHelper::SetType (std::string type,
   m_mac.Set (n10, v10);
 }
 
+void
+WifiMacHelper::SetOfdmaManager (std::string type,
+                                std::string n0, const AttributeValue &v0,
+                                std::string n1, const AttributeValue &v1,
+                                std::string n2, const AttributeValue &v2,
+                                std::string n3, const AttributeValue &v3,
+                                std::string n4, const AttributeValue &v4,
+                                std::string n5, const AttributeValue &v5,
+                                std::string n6, const AttributeValue &v6,
+                                std::string n7, const AttributeValue &v7,
+                                std::string n8, const AttributeValue &v8,
+                                std::string n9, const AttributeValue &v9,
+                                std::string n10, const AttributeValue &v10)
+{
+  m_ofdmaManager = ObjectFactory ();
+  m_ofdmaManager.SetTypeId (type);
+  m_ofdmaManager.Set (n0, v0);
+  m_ofdmaManager.Set (n1, v1);
+  m_ofdmaManager.Set (n2, v2);
+  m_ofdmaManager.Set (n3, v3);
+  m_ofdmaManager.Set (n4, v4);
+  m_ofdmaManager.Set (n5, v5);
+  m_ofdmaManager.Set (n6, v6);
+  m_ofdmaManager.Set (n7, v7);
+  m_ofdmaManager.Set (n8, v8);
+  m_ofdmaManager.Set (n9, v9);
+  m_ofdmaManager.Set (n10, v10);
+}
+
 Ptr<WifiMac>
 WifiMacHelper::Create (Ptr<NetDevice> device) const
 {
   Ptr<WifiMac> mac = m_mac.Create<WifiMac> ();
   mac->SetDevice (device);
+  // create and install the OFDMA Manager if this is an HE AP
+  Ptr<ApWifiMac> ap = DynamicCast<ApWifiMac> (mac);
+  if (ap != 0 && mac->GetHeConfiguration () && m_ofdmaManager.IsTypeIdSet ())
+    {
+      Ptr<OfdmaManager> ofdmaManager = m_ofdmaManager.Create<OfdmaManager> ();
+      ap->AggregateObject (ofdmaManager);
+    }
   return mac;
 }
 
