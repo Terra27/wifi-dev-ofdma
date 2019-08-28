@@ -48,6 +48,7 @@
 #include <cmath>
 #include <iomanip>
 #include <sstream>
+#include <numeric>
 
 using namespace ns3;
 
@@ -128,6 +129,18 @@ public:
    * Report that an MPDU was not correctly received.
    */
   void TxopDuration (Time startTime, Time duration);
+  /**
+   * Report that the application has created and sent a new packet.
+   */
+  void NotifyApplicationTx (std::string context, Ptr<const Packet>);
+  /**
+   * Report that the application has received a new packet.
+   */
+  void NotifyApplicationRx (std::string context, Ptr<const Packet> p);
+  /**
+   * Parse context strings of the form "/NodeList/x/DeviceList/y/" to extract the NodeId
+   */
+  uint32_t ContextToNodeId (const std::string & context);
 
 private:
   uint32_t m_payloadSize;   // bytes
@@ -175,6 +188,8 @@ private:
   double m_maxHolDelay;     // milliseconds
   double m_avgHolDelay;     // milliseconds
   uint64_t m_nHolDelaySamples;
+  std::map <uint64_t /* uid */, Time /* start */> m_appPacketTxMap;
+  std::map <uint32_t /* nodeId */, std::vector<Time>  /* array of latencies */> m_appLatencyMap;
 
   struct Stats
   {
@@ -459,6 +474,11 @@ WifiDlOfdmaExample::Setup (void)
   m_rxStart.assign (m_nStations, 0.0);
   m_rxStop.assign (m_nStations, 0.0);
 
+  for (uint16_t i = 0; i < m_nStations; i++)
+    {
+      m_appLatencyMap.insert (std::make_pair (i, std::vector<Time> ()));
+    }
+
   Config::ConnectWithoutContext ("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/Assoc",
                                  MakeCallback (&WifiDlOfdmaExample::EstablishBaAgreement, this));
 }
@@ -553,8 +573,25 @@ WifiDlOfdmaExample::Run (void)
                                << ", " << it->second.avgHolDelay << ") ";
     }
 
-  std::cout << std::endl << std::endl << "Head-of-line delay (ms): (" << m_minHolDelay << ", " << m_maxHolDelay
-                                      << ", " << m_avgHolDelay << ")" << std::endl << std::endl;
+  std::cout << std::endl << std::endl << "Head-of-line delay (ms): ("
+                                      << m_minHolDelay << ", "
+                                      << m_maxHolDelay << ", "
+                                      << m_avgHolDelay << ")" << std::endl;
+
+  std::cout << std::endl << "Average latency (ms)" << std::endl
+                         << "--------------------" << std::endl;
+
+  for (uint32_t i = 0; i < m_staNodes.GetN (); i++)
+    {
+      auto it = m_appLatencyMap.find (i);
+      NS_ASSERT (it != m_appLatencyMap.end ());
+      double average_latency_ms = (std::accumulate (it->second.begin (), it->second.end (), NanoSeconds (0))).ToDouble (Time::MS) / it->second.size ();
+      std::cout << "STA_" << i << ": " << average_latency_ms << " ";
+    }
+  std::cout << std::endl << std::endl;
+
+  m_appPacketTxMap.clear ();
+  m_appLatencyMap.clear ();
 
   Simulator::Destroy ();
 }
@@ -679,6 +716,9 @@ WifiDlOfdmaExample::StartStatistics (void)
       m_rxStart[i] = DynamicCast<PacketSink> (m_sinkApps.Get (i))->GetTotalRx ();
     }
 
+  Config::Connect ("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/$ns3::WifiMac/MacTx", MakeCallback (&WifiDlOfdmaExample::NotifyApplicationTx, this));
+  Config::Connect ("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/$ns3::WifiMac/MacRx", MakeCallback (&WifiDlOfdmaExample::NotifyApplicationRx, this));
+
   Simulator::Schedule (Seconds (m_simulationTime), &WifiDlOfdmaExample::StopStatistics, this);
 }
 
@@ -714,6 +754,9 @@ WifiDlOfdmaExample::StopStatistics (void)
     {
       m_clientApps.Get (i)->Dispose ();
     }
+
+  Config::Disconnect ("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/$ns3::WifiMac/MacTx", MakeCallback (&WifiDlOfdmaExample::NotifyApplicationTx, this));
+  Config::Disconnect ("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/$ns3::WifiMac/MacRx", MakeCallback (&WifiDlOfdmaExample::NotifyApplicationRx, this));
 }
 
 void
@@ -887,6 +930,43 @@ WifiDlOfdmaExample::TxopDuration (Time startTime, Time duration)
     {
       m_maxTxop = duration;
     }
+}
+
+void
+WifiDlOfdmaExample::NotifyApplicationTx (std::string context, Ptr<const Packet> p)
+{
+  if (p->GetSize () < m_payloadSize)
+    {
+      return;
+    }
+  m_appPacketTxMap.insert (std::make_pair (p->GetUid (), Simulator::Now ()));
+}
+
+void
+WifiDlOfdmaExample::NotifyApplicationRx (std::string context, Ptr<const Packet> p)
+{
+  if (p->GetSize () < m_payloadSize)
+    {
+      return;
+    }
+  auto itTxPacket = m_appPacketTxMap.find (p->GetUid ());
+  if (itTxPacket != m_appPacketTxMap.end ())
+    {
+      Time latency = (Simulator::Now () - itTxPacket->second);
+      auto itStaLatencies = m_appLatencyMap.find (ContextToNodeId (context));
+      NS_ASSERT (itStaLatencies != m_appLatencyMap.end ());
+      itStaLatencies->second.push_back (latency);
+      m_appPacketTxMap.erase (itTxPacket);
+    }
+}
+
+uint32_t
+WifiDlOfdmaExample::ContextToNodeId (const std::string & context)
+{
+  std::string sub = context.substr (10);
+  uint32_t pos = sub.find ("/Device");
+  uint32_t nodeId = atoi (sub.substr (0, pos).c_str ());
+  return nodeId;
 }
 
 int main (int argc, char *argv[])
