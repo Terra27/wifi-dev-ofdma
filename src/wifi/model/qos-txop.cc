@@ -1525,27 +1525,6 @@ QosTxop::IsLastFragment (void) const
   return isLastFragment;
 }
 
-Ptr<Packet>
-QosTxop::GetFragmentPacket (WifiMacHeader *hdr)
-{
-  NS_LOG_FUNCTION (this << hdr);
-  *hdr = m_currentMpdu->GetHeader ();
-  hdr->SetFragmentNumber (m_fragmentNumber);
-  uint32_t startOffset = GetFragmentOffset ();
-  Ptr<Packet> fragment;
-  if (IsLastFragment ())
-    {
-      hdr->SetNoMoreFragments ();
-    }
-  else
-    {
-      hdr->SetMoreFragments ();
-    }
-  fragment = m_currentMpdu->GetPacket ()->CreateFragment (startOffset,
-                                                          GetFragmentSize ());
-  return fragment;
-}
-
 void
 QosTxop::SetAccessCategory (AcIndex ac)
 {

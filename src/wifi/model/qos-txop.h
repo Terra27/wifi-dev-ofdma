@@ -333,16 +333,6 @@ public:
   bool NeedFragmentation (void) const;
 
   /**
-   * Get the next fragment from the packet with
-   * appropriate Wifi header for the fragment.
-   *
-   * \param hdr Wi-Fi header.
-   *
-   * \return the fragment with the current fragment number.
-   */
-  Ptr<Packet> GetFragmentPacket (WifiMacHeader *hdr);
-
-  /**
    * Set the access category of this EDCAF.
    *
    * \param ac access category.
