@@ -1928,24 +1928,22 @@ MacLow::GetAckTxVectorForData (Mac48Address to, WifiMode dataTxMode) const
 }
 
 Time
-MacLow::CalculateOverallTxTime (Ptr<const Packet> packet,
-                                const WifiMacHeader* hdr,
+MacLow::CalculateOverallTxTime (Ptr<const WifiMacQueueItem> mpdu,
                                 const MacLowTransmissionParameters& params,
                                 uint32_t fragmentSize) const
 {
-  Ptr<const WifiMacQueueItem> item = Create<const WifiMacQueueItem> (packet, *hdr);
-  Time txTime = CalculateOverheadTxTime (item, params);
+  Time txTime = CalculateOverheadTxTime (mpdu, params);
   uint32_t dataSize;
   if (fragmentSize > 0)
     {
       Ptr<const Packet> fragment = Create<Packet> (fragmentSize);
-      dataSize = GetSize (fragment, hdr, false);
+      dataSize = GetSize (fragment, &mpdu->GetHeader (), false);
     }
   else
     {
-      dataSize = GetSize (packet, hdr, false);
+      dataSize = GetSize (mpdu->GetPacket (), &mpdu->GetHeader (), false);
     }
-  txTime += m_phy->CalculateTxDuration (dataSize, GetDataTxVector (item), m_phy->GetFrequency ());
+  txTime += m_phy->CalculateTxDuration (dataSize, GetDataTxVector (mpdu), m_phy->GetFrequency ());
   return txTime;
 }
 
@@ -1979,7 +1977,7 @@ MacLow::CalculateTransmissionTime (Ptr<const Packet> packet,
                                    const WifiMacHeader* hdr,
                                    const MacLowTransmissionParameters& params) const
 {
-  Time txTime = CalculateOverallTxTime (packet, hdr, params);
+  Time txTime = CalculateOverallTxTime (Create<const WifiMacQueueItem> (packet, *hdr), params);
   if (params.HasNextPacket ())
     {
       WifiTxVector dataTxVector = GetDataTxVector (Create<const WifiMacQueueItem> (packet, *hdr));

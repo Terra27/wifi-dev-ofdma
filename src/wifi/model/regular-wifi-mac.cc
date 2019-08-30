@@ -1037,7 +1037,7 @@ RegularWifiMac::SendAddBaResponse (const MgtAddBaRequestHeader *reqHdr,
   //It is unclear which queue this frame should go into. For now we
   //bung it into the queue corresponding to the TID for which we are
   //establishing an agreement, and push it to the head.
-  m_edca[QosUtilsMapTidToAc (reqHdr->GetTid ())]->PushFront (packet, hdr);
+  m_edca[QosUtilsMapTidToAc (reqHdr->GetTid ())]->PushFront (Create<WifiMacQueueItem> (packet, hdr));
 }
 
 TypeId

@@ -350,13 +350,12 @@ public:
   void SetAccessCategory (AcIndex ac);
 
   /**
-   * \param packet packet to send.
-   * \param hdr header of packet to send.
+   * \param mpdu packet to send.
    *
    * Store the packet in the front of the internal queue until it
    * can be sent safely.
    */
-  void PushFront (Ptr<const Packet> packet, const WifiMacHeader &hdr);
+  void PushFront (Ptr<WifiMacQueueItem> mpdu);
 
   /**
    * Complete block ACK configuration.
@@ -672,7 +671,6 @@ private:
   Ptr<BlockAckManager> m_baManager;                     //!< the Block ACK manager
   uint8_t m_blockAckThreshold;                          //!< the Block ACK threshold
   BlockAckType m_blockAckType;                          //!< the Block ACK type
-  Time m_currentPacketTimestamp;                        //!< the current packet timestamp
   uint16_t m_blockAckInactivityTimeout;                 //!< the Block ACK inactivity timeout
   Time m_startTxop;                                     //!< the start TXOP time
   bool m_isAccessRequestedForRts;                       //!< flag whether access is requested to transmit a RTS frame

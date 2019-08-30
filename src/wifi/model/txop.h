@@ -433,21 +433,19 @@ protected:
   /**
    * Check if RTS should be re-transmitted if CTS was missed.
    *
-   * \param packet current packet being transmitted.
-   * \param hdr current header being transmitted.
+   * \param mpdu current packet being transmitted.
    * \return true if RTS should be re-transmitted,
    *         false otherwise.
    */
-  bool NeedRtsRetransmission (Ptr<const Packet> packet, const WifiMacHeader &hdr);
+  bool NeedRtsRetransmission (Ptr<WifiMacQueueItem> mpdu);
   /**
    * Check if DATA should be re-transmitted if ACK was missed.
    *
-   * \param packet current packet being transmitted.
-   * \param hdr current header being transmitted.
+   * \param mpdu current packet being transmitted.
    * \return true if DATA should be re-transmitted,
    *         false otherwise.
    */
-  bool NeedDataRetransmission (Ptr<const Packet> packet, const WifiMacHeader &hdr);
+  bool NeedDataRetransmission (Ptr<WifiMacQueueItem> mpdu);
   /**
    * Check if the current packet should be fragmented.
    *
@@ -531,8 +529,7 @@ protected:
   uint8_t m_aifsn;        //!< the AIFSN
   Time m_txopLimit;       //!< the txop limit time
 
-  Ptr<const Packet> m_currentPacket; //!< the current packet
-  WifiMacHeader m_currentHdr; //!< the current header
+  Ptr<WifiMacQueueItem> m_currentMpdu; //!< the current MPDU
   MacLowTransmissionParameters m_currentParams; ///< current transmission parameters
   uint8_t m_fragmentNumber; //!< the fragment number
   TracedCallback<uint32_t> m_backoffTrace; //!< backoff trace value

@@ -224,11 +224,10 @@ AmpduAggregationTest::DoRun (void)
   NS_TEST_EXPECT_MSG_EQ (mpduList.empty (), true, "no MPDU aggregation should be performed if there is no agreement");
 
   m_manager->SetMaxSsrc (0); //set to 0 in order to fake that the maximum number of retries has been reached
-  m_mac->GetBEQueue ()->m_currentHdr = hdr2;
-  m_mac->GetBEQueue ()->m_currentPacket = pkt2->Copy ();
+  m_mac->GetBEQueue ()->m_currentMpdu = Create<WifiMacQueueItem> (pkt2, hdr2);
   m_mac->GetBEQueue ()->MissedAck ();
 
-  NS_TEST_EXPECT_MSG_EQ (m_mac->GetBEQueue ()->m_currentPacket, 0, "packet should be discarded");
+  NS_TEST_EXPECT_MSG_EQ (m_mac->GetBEQueue ()->m_currentMpdu, 0, "packet should be discarded");
   m_mac->GetBEQueue ()->GetWifiMacQueue ()->Remove (pkt3);
 
   Simulator::Destroy ();
