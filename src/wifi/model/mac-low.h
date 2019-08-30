@@ -52,6 +52,7 @@ class CtrlBAckRequestHeader;
 class CtrlBAckResponseHeader;
 class MsduAggregator;
 class MpduAggregator;
+class CtrlTriggerHeader;
 struct RxSignalInfo;
 class OfdmaManager;
 class CtrlTriggerHeader;
@@ -679,6 +680,17 @@ private:
    * \return TXVECTOR for the Block ACK
    */
   WifiTxVector GetAckTxVectorForData (Mac48Address to, WifiMode dataTxMode) const;
+  /**
+   * Return a TXVECTOR for the UL frame that the station will send in response to
+   * the given Trigger frame, configured with the BSS color and transmit power
+   * level to use for the consequent HE TB PPDU.
+   * Note that this method should only be called by non-AP stations only.
+   *
+   * \param trigger the received Trigger frame
+   * \param triggerSender the MAC address of the AP sending the Trigger frame
+   * \return TXVECTOR for the HE TB PPDU frame
+   */
+  WifiTxVector GetHeTbTxVector (CtrlTriggerHeader trigger, Mac48Address triggerSender) const;
   /**
    * Get control answer mode function.
    *

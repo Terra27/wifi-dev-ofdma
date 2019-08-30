@@ -1212,7 +1212,7 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
           auto userInfoIt = trigger.FindUserInfoWithAid (GetStaId (m_self));
           NS_ASSERT (userInfoIt != trigger.end ());
           blockAckReq = userInfoIt->GetMuBarTriggerDepUserInfo ();
-          blockAckTxVector = trigger.GetHeTbTxVector (GetStaId (m_self));
+          blockAckTxVector = GetHeTbTxVector (trigger, hdr.GetAddr2 ());
         }
 
       if (!blockAckReq.IsMultiTid ())
@@ -1915,6 +1915,67 @@ MacLow::GetBlockAckTxVector (Mac48Address to, WifiMode dataTxMode) const
 uint16_t blockAckTxGuardInterval = ConvertGuardIntervalToNanoSeconds (blockAckMode, m_phy->GetShortGuardInterval (), m_phy->GetGuardInterval ());
   v.SetGuardInterval (blockAckTxGuardInterval);
   v.SetNss (1);
+  return v;
+}
+
+WifiTxVector
+MacLow::GetHeTbTxVector (CtrlTriggerHeader trigger, Mac48Address triggerSender) const
+{
+  NS_ASSERT (triggerSender != m_self); //TxPower information is used only by STAs, it is useless for the sending AP (which can directly use CtrlTriggerHeader::GetHeTbTxVector)
+  uint16_t staId = GetStaId (m_self);
+  auto userInfoIt = trigger.FindUserInfoWithAid (staId);
+  NS_ASSERT (userInfoIt != trigger.end ());
+
+  WifiTxVector v = trigger.GetHeTbTxVector (staId);
+
+  Ptr<HeConfiguration> heConfiguration = m_mac->GetHeConfiguration ();
+  NS_ABORT_MSG_IF (heConfiguration == 0, "This STA has to be an HE station to send an HE_TB_PPDU");
+  UintegerValue bssColorAttribute;
+  heConfiguration->GetAttribute ("BssColor", bssColorAttribute);
+  v.SetBssColor (bssColorAttribute.Get ());
+
+  uint8_t powerLevel = m_stationManager->GetDefaultTxPowerLevel ();
+  /**
+   * Get the transmit power to use for an HE TB PPDU
+   * considering:
+   * - the transmit power used by the AP to send the Trigger Frame (TF),
+   *   obtained from the AP TX Power subfield of the Common Info field
+   *   of the TF.
+   * - the target uplink RSSI expected by the AP for the triggered HE TB PPDU,
+   *   obtained from the UL Target RSSI subfield of the User Info field
+   *   of the TF.
+   * - the RSSI of the PPDU containing the TF, typically logged by the
+   *   WifiRemoteStationManager upon reception of the TF from the AP.
+   *
+   * It is assumed that path loss is symmetric (i.e. uplink path loss is
+   * equivalent to the measured downlink path loss);
+   *
+   * Refer to section 27.3.14.2 (Power pre-correction) of 802.11ax Draft 4.0 for more details.
+   */
+  int8_t pathLossDb = trigger.GetApTxPower () - static_cast<int8_t> (m_stationManager->GetMostRecentRssi (triggerSender)); //cast RSSI to be on equal footing with AP Tx power information
+  double reqTxPowerDbm = static_cast<double> (userInfoIt->GetUlTargetRssi () + pathLossDb);
+
+  //Convert the transmit power to a power level
+  uint8_t numPowerLevels = m_phy->GetNTxPower ();
+  if (numPowerLevels > 1)
+    {
+      double stepDbm = (m_phy->GetTxPowerEnd () - m_phy->GetTxPowerStart ()) / (numPowerLevels - 1);
+      powerLevel = static_cast<uint8_t> (ceil ((reqTxPowerDbm - m_phy->GetTxPowerStart ()) / stepDbm)); //better be slightly above so as to satisfy target UL RSSI
+      if (powerLevel > numPowerLevels)
+        {
+          powerLevel = numPowerLevels; //capping will trigger warning below
+        }
+    }
+  if (reqTxPowerDbm > m_phy->GetPowerDbm (powerLevel))
+    {
+      NS_LOG_WARN ("The requested power level (" << reqTxPowerDbm << "dBm) cannot be satisfied (max: " << m_phy->GetTxPowerEnd () << "dBm)");
+    }
+  v.SetTxPowerLevel (powerLevel);
+  NS_LOG_LOGIC ("UL power control: "
+                << "input {pathLoss=" << pathLossDb << "dB, reqTxPower=" << reqTxPowerDbm << "dBm}"
+                << " output {powerLevel=" << +powerLevel << " -> " << m_phy->GetPowerDbm (powerLevel) << "dBm}"
+                << " PHY power capa {min=" << m_phy->GetTxPowerStart () << "dBm, max=" << m_phy->GetTxPowerEnd () << "dBm, levels:" << +numPowerLevels << "}");
+
   return v;
 }
 
