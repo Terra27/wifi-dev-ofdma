@@ -1197,6 +1197,9 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
                    || (hdr.GetAddr1 ().IsBroadcast ()
                        && trigger.FindUserInfoWithAid (GetStaId (m_self)) != trigger.end ()))))
     {
+      m_stationManager->ReportRxOk (hdr.GetAddr2 (), &hdr,
+                                                  rxSignalInfo, txVector.GetMode (staId));
+
       CtrlBAckRequestHeader blockAckReq;
       WifiTxVector blockAckTxVector;
       if (hdr.IsBlockAckReq ())
