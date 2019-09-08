@@ -568,6 +568,12 @@ WifiPhyHelper::GetRadiotapHeader (
 
       header.SetHeFields (data1, data2, data3, data4, data5);
     }
+  
+  if (preamble == WIFI_PREAMBLE_HE_MU)
+    {
+      header.SetHeMuFields (0, 0); //TODO
+      header.SetHeMuPerUserFields (0, 0, 0, 0); //TODO
+    }
 }
 
 void
