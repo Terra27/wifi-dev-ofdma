@@ -243,7 +243,8 @@ WifiPhyHelper::PcapSniffTxEvent (
     case PcapHelper::DLT_IEEE802_11_RADIO:
       {
         Ptr<Packet> p = packet->Copy ();
-        RadiotapHeader header = GetRadiotapHeader (p, channelFreqMhz, txVector, aMpdu, staId);
+        RadiotapHeader header;
+        GetRadiotapHeader (header, p, channelFreqMhz, txVector, aMpdu, staId);
         p->AddHeader (header);
         file->Write (Simulator::Now (), p);
         return;
@@ -277,9 +278,8 @@ WifiPhyHelper::PcapSniffRxEvent (
     case PcapHelper::DLT_IEEE802_11_RADIO:
       {
         Ptr<Packet> p = packet->Copy ();
-        RadiotapHeader header = GetRadiotapHeader (p, channelFreqMhz, txVector, aMpdu, staId);
-        header.SetAntennaSignalPower (signalNoise.signal);
-        header.SetAntennaNoisePower (signalNoise.noise);
+        RadiotapHeader header;
+        GetRadiotapHeader (header, p, channelFreqMhz, txVector, aMpdu, staId, signalNoise);
         p->AddHeader (header);
         file->Write (Simulator::Now (), p);
         return;
@@ -289,15 +289,30 @@ WifiPhyHelper::PcapSniffRxEvent (
     }
 }
 
-RadiotapHeader
+void
 WifiPhyHelper::GetRadiotapHeader (
+  RadiotapHeader       &header,
+  Ptr<Packet>          packet,
+  uint16_t             channelFreqMhz,
+  WifiTxVector         txVector,
+  MpduInfo             aMpdu,
+  uint16_t             staId,
+  SignalNoiseDbm       signalNoise)
+{
+  header.SetAntennaSignalPower (signalNoise.signal);
+  header.SetAntennaNoisePower (signalNoise.noise);
+  GetRadiotapHeader (header, packet, channelFreqMhz, txVector, aMpdu, staId);
+}
+
+void
+WifiPhyHelper::GetRadiotapHeader (
+  RadiotapHeader       &header,
   Ptr<Packet>          packet,
   uint16_t             channelFreqMhz,
   WifiTxVector         txVector,
   MpduInfo             aMpdu,
   uint16_t             staId)
 {
-  RadiotapHeader header;
   WifiPreamble preamble = txVector.GetPreambleType ();
 
   uint8_t frameFlags = RadiotapHeader::FRAME_FLAG_NONE;
@@ -553,8 +568,6 @@ WifiPhyHelper::GetRadiotapHeader (
 
       header.SetHeFields (data1, data2, data3, data4, data5);
     }
-
-  return header;
 }
 
 void
