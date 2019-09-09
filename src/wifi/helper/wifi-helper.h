@@ -207,6 +207,7 @@ protected:
    * \param channelFreqMhz the channel frequency
    * \param txVector the TXVECTOR
    * \param aMpdu the A-MPDU information
+   * \param staId the STA-ID
    *
    * Handle tx pcap.
    */
@@ -214,7 +215,8 @@ protected:
                                 Ptr<const Packet> packet,
                                 uint16_t channelFreqMhz,
                                 WifiTxVector txVector,
-                                MpduInfo aMpdu);
+                                MpduInfo aMpdu,
+                                uint16_t staId);
   /**
    * \param file the pcap file wrapper
    * \param packet the packet
@@ -222,6 +224,7 @@ protected:
    * \param txVector the TXVECTOR
    * \param aMpdu the A-MPDU information
    * \param signalNoise the rx signal and noise information
+   * \param staId the STA-ID
    *
    * Handle rx pcap.
    */
@@ -230,7 +233,8 @@ protected:
                                 uint16_t channelFreqMhz,
                                 WifiTxVector txVector,
                                 MpduInfo aMpdu,
-                                SignalNoiseDbm signalNoise);
+                                SignalNoiseDbm signalNoise,
+                                uint16_t staId);
 
   ObjectFactory m_phy; ///< PHY object
   ObjectFactory m_errorRateModel; ///< error rate model
@@ -246,13 +250,15 @@ private:
    * \param channelFreqMhz the channel frequency
    * \param txVector the TXVECTOR
    * \param aMpdu the A-MPDU information
+   * \param staId the STA-ID
    *
    * \returns the radiotap header
    */
   static RadiotapHeader GetRadiotapHeader (Ptr<Packet> packet,
                                            uint16_t channelFreqMhz,
                                            WifiTxVector txVector,
-                                           MpduInfo aMpdu);
+                                           MpduInfo aMpdu,
+                                           uint16_t staId);
 
   /**
    * \brief Enable pcap output the indicated net device.

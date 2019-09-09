@@ -1273,12 +1273,14 @@ public:
    * \param txVector the TXVECTOR that holds rx parameters
    * \param signalNoise signal power and noise power in dBm (noise power includes the noise figure)
    * \param statusPerMpdu reception status per MPDU
+   * \param staId the STA-ID
    */
   void NotifyMonitorSniffRx (Ptr<const WifiPsdu> psdu,
                              uint16_t channelFreqMhz,
                              WifiTxVector txVector,
                              SignalNoiseDbm signalNoise,
-                             std::vector<bool> statusPerMpdu);
+                             std::vector<bool> statusPerMpdu,
+                             uint16_t staId = SU_STA_ID);
 
   /**
    * TracedCallback signature for monitor mode receive events.
@@ -1296,6 +1298,7 @@ public:
    * \param aMpdu the type of the packet (0 is not A-MPDU, 1 is a MPDU that is part of an A-MPDU and 2 is the last MPDU in an A-MPDU)
    *        and the A-MPDU reference number (must be a different value for each A-MPDU but the same for each subframe within one A-MPDU)
    * \param signalNoise signal power and noise power in dBm
+   * \param staId the STA-ID
    * \todo WifiTxVector should be passed by const reference because
    * of its size.
    */
@@ -1303,7 +1306,8 @@ public:
                                             uint16_t channelFreqMhz,
                                             WifiTxVector txVector,
                                             MpduInfo aMpdu,
-                                            SignalNoiseDbm signalNoise);
+                                            SignalNoiseDbm signalNoise,
+                                            uint16_t staId);
 
   /**
    * Public method used to fire a MonitorSniffer trace for a wifi PSDU being transmitted.
@@ -1316,10 +1320,12 @@ public:
    * \param channelFreqMhz the frequency in MHz at which the packet is
    *        transmitted.
    * \param txVector the TXVECTOR that holds tx parameters
+   * \param staId the STA-ID
    */
   void NotifyMonitorSniffTx (Ptr<const WifiPsdu> psdu,
                              uint16_t channelFreqMhz,
-                             WifiTxVector txVector);
+                             WifiTxVector txVector,
+                             uint16_t staId = SU_STA_ID);
 
   /**
    * TracedCallback signature for monitor mode transmit events.
@@ -1330,13 +1336,15 @@ public:
    * \param txVector the TXVECTOR that holds tx parameters
    * \param aMpdu the type of the packet (0 is not A-MPDU, 1 is a MPDU that is part of an A-MPDU and 2 is the last MPDU in an A-MPDU)
    *        and the A-MPDU reference number (must be a different value for each A-MPDU but the same for each subframe within one A-MPDU)
+   * \param staId the STA-ID
    * \todo WifiTxVector should be passed by const reference because
    * of its size.
    */
   typedef void (* MonitorSnifferTxCallback)(const Ptr<const Packet> packet,
                                             uint16_t channelFreqMhz,
                                             WifiTxVector txVector,
-                                            MpduInfo aMpdu);
+                                            MpduInfo aMpdu,
+                                            uint16_t staId);
 
   /**
    * Public method used to fire a EndOfHePreamble trace once both HE SIG fields have been received, as well as training fields.
@@ -2029,7 +2037,7 @@ private:
    * \todo WifiTxVector and signalNoiseDbm should be be passed as
    * const  references because of their sizes.
    */
-  TracedCallback<Ptr<const Packet>, uint16_t, WifiTxVector, MpduInfo, SignalNoiseDbm> m_phyMonitorSniffRxTrace;
+  TracedCallback<Ptr<const Packet>, uint16_t /* frequency (MHz) */, WifiTxVector, MpduInfo, SignalNoiseDbm, uint16_t /* STA-ID*/> m_phyMonitorSniffRxTrace;
 
   /**
    * A trace source that emulates a wifi device in monitor mode
@@ -2043,7 +2051,7 @@ private:
    * \todo WifiTxVector should be passed by const reference because
    * of its size.
    */
-  TracedCallback<Ptr<const Packet>, uint16_t, WifiTxVector, MpduInfo> m_phyMonitorSniffTxTrace;
+  TracedCallback<Ptr<const Packet>, uint16_t /* frequency (MHz) */, WifiTxVector, MpduInfo, uint16_t /* STA-ID*/> m_phyMonitorSniffTxTrace;
 
   /**
    * A trace source that indiates the end of both HE SIG fields as well as training fields for received 802.11ax packets
