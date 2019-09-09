@@ -166,6 +166,7 @@ private:
   uint16_t m_baBufferSize;
   std::string m_transport;
   std::string m_queueDisc;
+  bool m_enablePcap;
   double m_warmup;          // duration of the warmup period (seconds)
   std::size_t m_currentSta; // index of the current station
   Ssid m_ssid;
@@ -236,6 +237,7 @@ WifiDlOfdmaExample::WifiDlOfdmaExample ()
     m_baBufferSize (64),
     m_transport ("Udp"),
     m_queueDisc ("default"),
+    m_enablePcap (false),
     m_warmup (1.0),
     m_currentSta (0),
     m_ssid (Ssid ("network-A")),
@@ -283,6 +285,7 @@ WifiDlOfdmaExample::Config (int argc, char *argv[])
   cmd.AddValue ("transport", "Transport layer protocol (Udp/Tcp)", m_transport);
   cmd.AddValue ("queueDisc", "Queuing discipline to install on the AP (default/none)", m_queueDisc);
   cmd.AddValue ("warmup", "Duration of the warmup period (seconds)", m_warmup);
+  cmd.AddValue ("enablePcap", "Enable PCAP trace file generation.", m_enablePcap);
   cmd.AddValue ("verbose", "Enable/disable all Wi-Fi debug traces", m_verbose);
   cmd.Parse (argc, argv);
 
@@ -488,6 +491,12 @@ WifiDlOfdmaExample::Setup (void)
 
   Config::ConnectWithoutContext ("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/$ns3::StaWifiMac/Assoc",
                                  MakeCallback (&WifiDlOfdmaExample::EstablishBaAgreement, this));
+
+  if (m_enablePcap)
+    {
+      phy.EnablePcap ("STA_pcap", m_staDevices);
+      phy.EnablePcap ("AP_pcap", m_apDevices);
+    }
 }
 
 void
