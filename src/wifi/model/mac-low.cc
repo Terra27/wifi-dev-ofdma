@@ -122,6 +122,7 @@ MacLow::MacLow ()
     m_normalAckTimeoutEvent (),
     m_blockAckTimeoutEvent (),
     m_ctsTimeoutEvent (),
+    m_heTbPpduTimeoutEvent (),
     m_sendCtsEvent (),
     m_sendAckEvent (),
     m_sendDataEvent (),
@@ -187,6 +188,7 @@ MacLow::DoDispose (void)
   m_normalAckTimeoutEvent.Cancel ();
   m_blockAckTimeoutEvent.Cancel ();
   m_ctsTimeoutEvent.Cancel ();
+  m_heTbPpduTimeoutEvent.Cancel ();
   m_sendCtsEvent.Cancel ();
   m_sendAckEvent.Cancel ();
   m_sendDataEvent.Cancel ();
@@ -223,6 +225,11 @@ MacLow::CancelAllEvents (void)
   if (m_ctsTimeoutEvent.IsRunning ())
     {
       m_ctsTimeoutEvent.Cancel ();
+      oneRunning = true;
+    }
+  if (m_heTbPpduTimeoutEvent.IsRunning ())
+    {
+      m_heTbPpduTimeoutEvent.Cancel ();
       oneRunning = true;
     }
   if (m_sendCtsEvent.IsRunning ())
@@ -611,8 +618,47 @@ MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
           txFormat = m_ofdmaManager->GetTxFormat ();
         }
 
-      if (txFormat == OfdmaTxFormat::NON_OFDMA
-          || (txFormat == OfdmaTxFormat::DL_OFDMA && !m_ofdmaManager->GetDlOfdmaInfo ().staInfo.empty ()))
+      if (txFormat == OfdmaTxFormat::UL_OFDMA && m_ofdmaManager->GetUlOfdmaInfo ().trigger.GetNUserInfoFields () > 0)
+        {
+          /* Uplink transmission */
+          NS_LOG_DEBUG ("Starting an UL OFDMA transmission");
+          m_txParams = m_ofdmaManager->GetUlOfdmaInfo ().params;
+          const CtrlTriggerHeader& trigger = m_ofdmaManager->GetUlOfdmaInfo ().trigger;
+          // "If the Trigger frame has one User Info field and the AID12 subfield of the
+          // User Info contains the AID of a STA, then the RA field is set to the address
+          // of that STA". Otherwise, it is set to the broadcast address (Sec. 9.3.1.23 -
+          // 802.11ax amendment)
+          Mac48Address rxAddress;
+          if (trigger.GetNUserInfoFields () > 1)
+            {
+              rxAddress = Mac48Address::GetBroadcast ();
+            }
+          else
+            {
+              rxAddress = DynamicCast<ApWifiMac> (m_mac)->GetStaList ().at (trigger.begin ()->GetAid12 ());
+            }
+
+          WifiMacHeader hdr;
+          hdr.SetType (WIFI_MAC_CTL_TRIGGER);
+          hdr.SetAddr1 (rxAddress);
+          hdr.SetAddr2 (GetAddress ());
+          hdr.SetAddr3 (GetBssid ());
+          hdr.SetDsNotTo ();
+          hdr.SetDsNotFrom ();
+          hdr.SetNoRetry ();
+          hdr.SetNoMoreFragments ();
+          Ptr<Packet> packet = Create<Packet> ();
+          packet->AddHeader (trigger);
+
+          Ptr<WifiMacQueueItem> item = Create<WifiMacQueueItem> (packet, hdr);
+          currentQosTxop->UpdateCurrentPacket (item);
+          m_currentTxVector = GetRtsTxVector (item);
+          WifiModulationClass mod = m_currentTxVector.GetMode ().GetModulationClass ();
+          bool IsSingle = (mod == WIFI_MOD_CLASS_VHT || mod == WIFI_MOD_CLASS_HE);
+          m_currentPacket[SU_STA_ID] = Create<WifiPsdu> (item, IsSingle);
+        }
+      else if (txFormat == OfdmaTxFormat::NON_OFDMA
+               || (txFormat == OfdmaTxFormat::DL_OFDMA && !m_ofdmaManager->GetDlOfdmaInfo ().staInfo.empty ()))
         {
           /* Downlink transmission */
           std::map<Mac48Address,OfdmaManager::DlPerStaInfo>::const_iterator dlOfdmaInfoIt;
@@ -913,6 +959,15 @@ MacLow::RxStartIndication (WifiTxVector txVector, Time psduDuration)
       NotifyAckTimeoutResetNow ();
       m_blockAckTimeoutEvent = Simulator::Schedule (psduDuration + NanoSeconds (PSDU_DURATION_SAFEGUARD),
                                                      &MacLow::BlockAckTimeout, this);
+    }
+  else if (m_heTbPpduTimeoutEvent.IsRunning ())
+    {
+      // we are waiting for an HE TB PPDU and something arrived
+      NS_LOG_DEBUG ("Rescheduling HE TB PPDU timeout");
+      m_heTbPpduTimeoutEvent.Cancel ();
+      NotifyAckTimeoutResetNow ();
+      m_heTbPpduTimeoutEvent = Simulator::Schedule (psduDuration + NanoSeconds (PSDU_DURATION_SAFEGUARD),
+                                                    &MacLow::HeTbPpduTimeout, this);
     }
 
   return;
@@ -1610,6 +1665,28 @@ MacLow::GetResponseDuration (const MacLowTransmissionParameters& params, WifiTxV
           duration += WifiPhy::ConvertLSigLengthToHeTbPpduDuration (trigger.GetUlLength (),
                                                                     trigger.GetHeTbTxVector (trigger.begin ()->GetAid12 ()),
                                                                     m_phy->GetFrequency ());
+        }
+      /** Basic Trigger Frame soliciting A-MPDUs in HE TB PPDUs **/
+      else if (trigger.IsBasic ())
+        {
+          NS_ASSERT (params.HasUlMuAckSequence ());
+          WifiTxVector heTbTxVector = trigger.GetHeTbTxVector (trigger.begin ()->GetAid12 ());
+
+          // SIFS + HE TB PPDU + SIFS + acknowledgment
+          duration += 2 * GetSifs ();
+          duration += WifiPhy::ConvertLSigLengthToHeTbPpduDuration (trigger.GetUlLength (),
+                                                                    heTbTxVector,
+                                                                    m_phy->GetFrequency ());
+          if (params.GetUlMuAckSequenceType () == UlMuAckSequenceType::UL_MULTI_STA_BLOCK_ACK)
+            {
+              Mac48Address staAddress = params.GetStationsReceiveBlockAckFrom ().front ();
+              WifiTxVector blockAckTxVector = GetBlockAckTxVector (m_self, heTbTxVector.GetMode (GetStaId (staAddress)));
+              duration += GetBlockAckDuration (blockAckTxVector, params.GetBlockAckType (staAddress));
+            }
+          else
+            {
+              NS_FATAL_ERROR ("Sending Block Acks in an MU DL PPDU is not supported yet");
+            }
         }
     }
   /*
@@ -2448,6 +2525,31 @@ MacLow::BlockAckTimeout (void)
 }
 
 void
+MacLow::HeTbPpduTimeout (void)
+{
+  NS_LOG_FUNCTION (this);
+  NS_LOG_DEBUG ("HE TB PPDU timeout");
+
+  if (!m_txParams.HasUlMuAckSequence ())
+    {
+      // we get here if at least one PSDU carried by the HE TB PPDU was received
+      // (hence, the transmission is successful) and none requested acknowledgment
+      // (otherwise, the timer would have been cancelled). Continue the TXOP, if possible.
+      if (m_currentTxop->GetTxopLimit ().IsStrictlyPositive () && m_currentTxop->GetTxopRemaining () > GetSifs ())
+        {
+          Time ifs = (m_stationManager->GetRifsPermitted () ? GetRifs () : GetSifs ());
+          m_waitIfsEvent = Simulator::Schedule (ifs, &MacLow::WaitIfsAfterEndTxPacket, this);
+          return;
+        }
+    }
+
+  // terminate TXOP
+  Ptr<Txop> txop = m_currentTxop;
+  m_currentTxop = 0;
+  txop->EndTxNoAck ();
+}
+
+void
 MacLow::SendRtsForPacket (void)
 {
   NS_LOG_FUNCTION (this);
@@ -2524,6 +2626,24 @@ MacLow::StartDataTxTimers (WifiTxVector dataTxVector)
       NS_ASSERT (m_normalAckTimeoutEvent.IsExpired ());
       NotifyAckTimeoutStartNow (timerDelay);
       m_normalAckTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::NormalAckTimeout, this);
+    }
+  else if (m_txParams.HasUlMuAckSequence ())
+    {
+      /* A Trigger Frame (Basic variant) is being sent to solicit an HE TB PPDU */
+      NS_ASSERT (m_currentPacket.size () == 1 && m_currentPacket.begin ()->second->GetNMpdus () == 1
+                 && m_currentPacket.begin ()->second->GetHeader (0).IsTrigger ());
+      CtrlTriggerHeader trigger;
+      m_currentPacket.begin ()->second->GetPayload (0)->PeekHeader (trigger);
+      NS_ASSERT (trigger.IsBasic ());
+      WifiTxVector heTbTxVector = trigger.GetHeTbTxVector (trigger.begin ()->GetAid12 ());
+
+      // the timeout duration is "aSIFSTime + aSlotTime + aRxPHYStartDelay, starting
+      // at the PHY-TXEND.confirm primitive" (section 10.3.2.9 or 10.22.2.2 of 802.11-2016).
+      // aRxPHYStartDelay equals the time to transmit the PHY header.
+      Time timerDelay = txDuration + GetSifs () + GetSlotTime () + m_phy->CalculatePlcpPreambleAndHeaderDuration (heTbTxVector);
+      NS_ASSERT (m_heTbPpduTimeoutEvent.IsExpired ());
+      NotifyAckTimeoutStartNow (timerDelay);
+      m_heTbPpduTimeoutEvent = Simulator::Schedule (timerDelay, &MacLow::HeTbPpduTimeout, this);
     }
   else if (m_txParams.MustWaitBlockAck () || !m_txParams.GetStationsReceiveBlockAckFrom ().empty ())
     {
@@ -3224,7 +3344,24 @@ MacLow::SendBlockAckResponse (const CtrlBAckResponseHeader* blockAck, Mac48Addre
   tag.Set (rxSnr);
   packet->AddPacketTag (tag);
   uint16_t staId = (blockAckTxVector.GetPreambleType () == WIFI_PREAMBLE_HE_TB ? GetStaId (m_self) : SU_STA_ID);
-  ForwardDown (WifiPsduMap ({std::make_pair (staId, Create<const WifiPsdu> (packet, hdr))}), blockAckTxVector);
+  WifiPsduMap psduMap ({std::make_pair (staId, Create<const WifiPsdu> (packet, hdr))});
+  ForwardDown (psduMap, blockAckTxVector);
+
+  if (blockAck->IsMultiSta ())
+    {
+      Time txDuration = m_phy->CalculateTxDuration (psduMap, blockAckTxVector, m_phy->GetFrequency ());
+
+      // Continue transmitting if time remains in the TXOP
+      if (m_currentTxop->GetTxopLimit ().IsStrictlyPositive ()
+          && m_currentTxop->GetTxopRemaining () > txDuration + GetSifs ())
+        {
+          m_waitIfsEvent = Simulator::Schedule (txDuration + GetSifs (), &MacLow::WaitIfsAfterEndTxPacket, this);
+        }
+      else
+        {
+          m_endTxNoAckEvent = Simulator::Schedule (txDuration, &MacLow::EndTxNoAck, this);
+        }
+    }
 }
 
 void
@@ -3317,6 +3454,76 @@ MacLow::SendBlockAckAfterBlockAckRequest (const CtrlBAckRequestHeader reqHdr, Ma
 }
 
 void
+MacLow::SendMultiStaBlockAckAfterHeTbPpdu (Time duration, WifiTxVector heTbTxVector, double rxSnr)
+{
+  NS_LOG_FUNCTION (this);
+  if (!m_phy->IsStateTx () && !m_phy->IsStateRx ())
+    {
+      NS_LOG_FUNCTION (this << duration.As (Time::S) << heTbTxVector << rxSnr);
+      CtrlBAckResponseHeader blockAck;
+      NS_ASSERT (m_txParams.HasUlMuAckSequence ());
+
+      if (m_txParams.GetUlMuAckSequenceType () == UlMuAckSequenceType::UL_MULTI_STA_BLOCK_ACK)
+        {
+          std::list<Mac48Address> staList = m_txParams.GetStationsReceiveBlockAckFrom ();
+          BlockAckType multiStaBaType = m_txParams.GetBlockAckType (staList.front ());
+          blockAck.SetType (multiStaBaType);
+          NS_ASSERT (m_multiStaBaInfo.size () == multiStaBaType.m_bitmapLen.size ());
+
+          for (std::size_t i = 0; i < multiStaBaType.m_bitmapLen.size (); i++)
+            {
+              AgreementsI agreementIt = m_multiStaBaInfo.at (i);
+              Mac48Address address = agreementIt->first.first;
+              uint8_t tid = agreementIt->first.second;
+
+              blockAck.SetAid11 (GetStaId (address), i);
+              blockAck.SetTidInfo (tid, i);
+              if (multiStaBaType.m_bitmapLen.at (i) == 0)
+                {
+                  // Acknowledgment context
+                  blockAck.SetAckType (true, i);
+                }
+              else
+                {
+                  // Block acknowledgment context
+                  blockAck.SetAckType (false, i);
+
+                  BlockAckCachesI cacheIt = m_bAckCaches.find (agreementIt->first);
+                  NS_ASSERT (cacheIt != m_bAckCaches.end ());
+
+                  uint16_t seqNumber = cacheIt->second.GetWinStart ();
+                  blockAck.SetStartingSequence (seqNumber, i);
+                  NS_LOG_DEBUG ("Requesting Block Ack with seq=" << seqNumber
+                                << " from=" << address << " tid=" << +tid);
+                  cacheIt->second.FillBlockAckBitmap (&blockAck, i);
+                }
+            }
+
+          Mac48Address rxAddress;
+          if (staList.size () == 1)
+            {
+              rxAddress = staList.front ();
+            }
+          else
+            {
+              rxAddress = Mac48Address::GetBroadcast ();
+            }
+          WifiMode mode = heTbTxVector.GetMode (heTbTxVector.GetHeMuUserInfoMap ().begin ()->first);
+          WifiTxVector blockAckTxVector = GetBlockAckTxVector (m_self, mode);
+          SendBlockAckResponse (&blockAck, rxAddress, true, duration, blockAckTxVector, rxSnr);
+        }
+      else
+        {
+          NS_FATAL_ERROR ("Sending Block Acks in an MU DL PPDU is not supported yet");
+        }
+    }
+  else
+    {
+      NS_LOG_DEBUG ("Skip block ack response!");
+    }
+}
+
+void
 MacLow::ResetBlockAckInactivityTimerIfNeeded (BlockAckAgreement &agreement)
 {
   if (agreement.GetTimeout () != 0)
@@ -3369,7 +3576,95 @@ MacLow::DeaggregateAmpduAndReceive (Ptr<WifiPsdu> psdu, RxSignalInfo rxSignalInf
               NS_ABORT_MSG_IF (firsthdr.GetAddr1 () != m_self, "All MPDUs of A-MPDU should have the same destination address");
               if (*status) //PER and thus CRC check succeeded
                 {
-                  if (psdu->IsSingle ())
+                  if (txVector.GetPreambleType () == WIFI_PREAMBLE_HE_TB && firsthdr.IsQosData ())
+                    {
+                      // this is a QoS data frame sent in an HE TB PPDU as a response to a Trigger Frame
+                      NS_ASSERT (m_ofdmaManager != 0);
+                      const CtrlTriggerHeader& trigger = m_ofdmaManager->GetUlOfdmaInfo ().trigger;
+
+                      if (trigger.FindUserInfoWithAid (GetStaId (firsthdr.GetAddr2 ())) != trigger.end ())
+                        {
+                          // the transmitter was solicited by the Trigger Frame
+                          if (m_heTbPpduTimeoutEvent.IsRunning () && m_txParams.HasUlMuAckSequence ())
+                            {
+                              // we get here only the first time an MPDU is received successfully (the
+                              // timer is cancelled when the first PSDU requesting acknowledgment is found;
+                              // after the code below is executed, HasUlMuAckSequence will return false
+                              // until a station is added to the TX params -- which happens when the
+                              // timer is cancelled). Remove all stations from TX params. Later we re-add
+                              // all stations that requested acknowledgment
+                              MacLowTransmissionParameters params;
+                              params.SetUlMuAckSequenceType (m_txParams.GetUlMuAckSequenceType ());
+                              m_txParams = params;
+                            }
+                          if (psdu->GetAckPolicyForTid (firsthdr.GetQosTid ()) == WifiMacHeader::NORMAL_ACK)
+                            {
+                              // Normal Ack or Implicit Block Ack Request policy, we need to send a block ack
+                              std::list<Mac48Address> staList = m_txParams.GetStationsReceiveBlockAckFrom ();
+
+                              if (std::find (staList.begin (), staList.end (), firsthdr.GetAddr2 ()) == staList.end ())
+                                {
+                                  // the transmitter of this MPDU has not been added yet to the TX params
+                                  if (staList.empty ())
+                                    {
+                                      // this is the first PSDU of the HE TB PPDU that needs acknowledgment.
+                                      m_multiStaBaInfo.clear ();
+                                      // Cancel the timer because a response will be sent
+                                      NS_ASSERT (m_heTbPpduTimeoutEvent.IsRunning ());
+                                      m_heTbPpduTimeoutEvent.Cancel ();
+                                      NotifyAckTimeoutResetNow ();
+                                      NS_ASSERT (!m_sendAckEvent.IsRunning ());
+                                      m_sendAckEvent = Simulator::Schedule (GetSifs (),
+                                                                            &MacLow::SendMultiStaBlockAckAfterHeTbPpdu, this,
+                                                                            firsthdr.GetDuration (),
+                                                                            txVector, rxSignalInfo.snr);
+                                      // TODO The Multi-STA Block Ack should carry the SNR value for each PSDU
+                                      // carried by the HE TB PPDU. This requires to extend the SnrTag such that
+                                      // it stores multiple values.
+
+                                      // add the sending station just to be able to call GetUlMuAckSequenceType below
+                                      m_txParams.EnableBlockAck (firsthdr.GetAddr2 (), BlockAckType::COMPRESSED);
+                                    }
+
+                                  AgreementsI it = m_bAckAgreements.find (std::make_pair (firsthdr.GetAddr2 (), firsthdr.GetQosTid ()));
+                                  NS_ASSERT (it != m_bAckAgreements.end ());
+
+                                  if (m_txParams.GetUlMuAckSequenceType () == UlMuAckSequenceType::UL_MULTI_STA_BLOCK_ACK)
+                                    {
+                                      BlockAckType baType = m_txParams.GetBlockAckType (m_txParams.GetStationsReceiveBlockAckFrom ().front ());
+
+                                      if (baType.m_variant == BlockAckType::COMPRESSED)
+                                        {
+                                          // the sender of this PSDU is the first one to be added to the TX params
+                                          baType.m_variant = BlockAckType::MULTI_STA;
+                                          baType.m_bitmapLen.clear ();
+                                        }
+
+                                      BlockAckCachesI cacheIt = m_bAckCaches.find (it->first);
+                                      NS_ASSERT (cacheIt != m_bAckCaches.end ());
+
+                                      if (psdu->GetNMpdus () == 1
+                                          && psdu->GetHeader (0).GetSequenceNumber () == cacheIt->second.GetWinStart ())
+                                        {
+                                          // Acknowledgment context of Multi-STA Block Acks
+                                          baType.m_bitmapLen.push_back (0);
+                                        }
+                                      else
+                                        {
+                                          baType.m_bitmapLen.push_back (it->second.first.GetBlockAckType ().m_bitmapLen.at (0));
+                                        }
+                                      m_txParams.EnableBlockAck (firsthdr.GetAddr2 (), baType);
+                                      m_multiStaBaInfo.push_back (it);
+                                    }
+                                  else
+                                    {
+                                      NS_FATAL_ERROR ("Sending Block Acks in an MU DL PPDU is not supported yet");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                  else if (psdu->IsSingle ())
                     {
                       //If the MPDU is sent as a VHT/HE single MPDU (EOF=1 in A-MPDU subframe header), then the responder sends an ACK.
                       NS_LOG_DEBUG ("Receive S-MPDU");

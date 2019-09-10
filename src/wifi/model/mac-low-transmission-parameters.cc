@@ -82,6 +82,17 @@ MacLowTransmissionParameters::EnableAck (void)
 void
 MacLowTransmissionParameters::EnableBlockAck (Mac48Address address, BlockAckType type)
 {
+  // if this object indicates an UL MU transmission with ack sequence type equal
+  // to UL_MULTI_STA_BLOCK_ACK, set the block ack type for all the stations equal
+  // to the given block ack type.
+  if (m_ulMuAckType == UlMuAckSequenceType::UL_MULTI_STA_BLOCK_ACK)
+    {
+      for (auto& pair : m_muWaitAck)
+        {
+          NS_ASSERT (pair.second.m_type == WaitAckType::BLOCK_ACK);
+          pair.second.m_baType = type;
+        }
+    }
   m_muWaitAck[address] = {WaitAckType::BLOCK_ACK, type};
 
   // Reset other member variables

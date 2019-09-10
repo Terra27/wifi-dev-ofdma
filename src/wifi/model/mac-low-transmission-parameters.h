@@ -125,7 +125,9 @@ public:
   void EnableAck (Mac48Address address);
   /**
    * For a multi-user transmission, record that the given station is expected to
-   * transmit a Block Ack Response of the given type.
+   * transmit a Block Ack Response of the given type. Note that, in case of UL MU
+   * transmission with acknowledgment via Multi-STA Block Ack, the Block Ack type
+   * of all the other stations will be updated and set equal to the given type.
    *
    * \param address the MAC address of the station from which a response is expected
    * \param type the Block Ack Response type

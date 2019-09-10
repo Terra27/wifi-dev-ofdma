@@ -818,6 +818,10 @@ private:
    */
   void CtsTimeout (void);
   /**
+   * Event handler when an HE TB PPDU timeout occurs.
+   */
+  void HeTbPpduTimeout (void);
+  /**
    * Event handler when CF-POLL timeout occurs.
    */
   void CfPollTimeout (void);
@@ -950,6 +954,15 @@ private:
   void SendBlockAckAfterAmpdu (uint8_t tid, Mac48Address originator, Time duration,
                                WifiTxVector dataTxVector, double rxSnr);
   /**
+   * Invoked after an HE TB PPDU has been received. Looks for corresponding
+   * block ack agreements and creates block ack bitmaps on a received packets basis.
+   *
+   * \param duration the remaining NAV duration
+   * \param heTbTxVector the transmit vector for the HE TB PPDU
+   * \param rxSnr the receive SNR
+   */
+  void SendMultiStaBlockAckAfterHeTbPpdu (Time duration, WifiTxVector heTbTxVector, double rxSnr);
+  /**
    * This method creates block ack frame with header equals to <i>blockAck</i> and start its transmission.
    *
    * \param blockAck the Block Ack response header
@@ -1022,6 +1035,7 @@ private:
   EventId m_normalAckTimeoutEvent;      //!< Normal ACK timeout event
   EventId m_blockAckTimeoutEvent;       //!< Block ACK timeout event
   EventId m_ctsTimeoutEvent;            //!< CTS timeout event
+  EventId m_heTbPpduTimeoutEvent;       //!< HE TB PPDU timeout event
   EventId m_sendCtsEvent;               //!< Event to send CTS
   EventId m_sendAckEvent;               //!< Event to send ACK
   EventId m_sendDataEvent;              //!< Event to send DATA
@@ -1081,6 +1095,7 @@ private:
 
   bool m_ctsToSelfSupported;             //!< Flag whether CTS-to-self is supported
   WifiTxVector m_currentTxVector;        //!< TXVECTOR used for the current packet transmission
+  std::vector<AgreementsI> m_multiStaBaInfo;  //!< BA agreements to include in Multi-STA Block Ack
 
   CfAckInfo m_cfAckInfo; //!< Info about piggyback ACKs used in PCF
 
