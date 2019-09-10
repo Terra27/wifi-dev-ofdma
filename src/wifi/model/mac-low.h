@@ -435,6 +435,23 @@ public:
                                   Ptr<Txop> txop);
 
   /**
+   * \param mpdu packet to send
+   * \param parameters the transmission parameters to use for this packet.
+   * \param txop pointer to the calling Txop.
+   * \param txVector the TX vector to use for the transmission
+   * \param ppduDurationLimit the PPDU duration limit
+   * \param duration the value for the Duration/ID field
+   *
+   * Start the transmission of the input packet and notify the listener
+   * of transmission events. Note that the value of <i>duration</i> is
+   * only used when transmitting an HE TB PPDU.
+   */
+  virtual void StartTransmission (Ptr<WifiMacQueueItem> mpdu,
+                                  MacLowTransmissionParameters parameters,
+                                  Ptr<Txop> txop, WifiTxVector txVector,
+                                  Time ppduDurationLimit, Time duration);
+
+  /**
    * \param txVector the TXVECTOR decoded from PHY header.
    * \param psduDuration the duration of the PSDU that is about to be received.
    *

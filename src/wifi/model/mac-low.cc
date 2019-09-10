@@ -543,7 +543,31 @@ MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
                            MacLowTransmissionParameters params,
                            Ptr<Txop> txop)
 {
-  NS_LOG_FUNCTION (this << *mpdu << params << txop);
+  WifiTxVector txVector;
+  const WifiMacHeader& hdr = mpdu->GetHeader ();
+  if (hdr.IsBlockAckReq ())
+    {
+      txVector = GetBlockAckTxVector (hdr.GetAddr1 (), GetDataTxVector (mpdu).GetMode ());
+    }
+  else if (hdr.IsCtl ())
+    {
+      txVector = GetRtsTxVector (mpdu);
+    }
+  else
+    {
+      txVector = GetDataTxVector (mpdu);
+    }
+
+  StartTransmission (mpdu, params, txop, txVector, Seconds (0), Seconds (0));
+}
+
+void
+MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
+                           MacLowTransmissionParameters params,
+                           Ptr<Txop> txop, WifiTxVector txVector,
+                           Time ppduDurationLimit, Time duration)
+{
+  NS_LOG_FUNCTION (this << *mpdu << params << txop << txVector << ppduDurationLimit << duration);
   NS_ASSERT (!m_cfAckInfo.expectCfAck);
   if (m_phy->IsStateOff ())
     {
@@ -568,18 +592,7 @@ MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
   CancelAllEvents ();
   m_currentTxop = txop;
   m_txParams = params;
-  if (hdr.IsBlockAckReq ())
-    {
-      m_currentTxVector = GetBlockAckTxVector (hdr.GetAddr1 (), GetDataTxVector (mpdu).GetMode ());
-    }
-  else if (hdr.IsCtl ())
-    {
-      m_currentTxVector = GetRtsTxVector (mpdu);
-    }
-  else
-    {
-      m_currentTxVector = GetDataTxVector (mpdu);
-    }
+  m_currentTxVector = txVector;
 
   /* The packet received by this function can be any of the following:
    * (a) a management frame dequeued from the Txop
@@ -671,13 +684,12 @@ MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
             }
 
           // if a TXOP limit exists, compute the remaining TXOP duration
-          Time ppduDurationLimit = Seconds (0);
-          if (m_currentTxop->GetTxopLimit ().IsStrictlyPositive ())
+          if (ppduDurationLimit.IsZero () && m_currentTxop->GetTxopLimit ().IsStrictlyPositive ())
             {
               ppduDurationLimit = m_currentTxop->GetTxopRemaining () - CalculateOverheadTxTime (mpdu, m_txParams, m_currentTxVector);
               if (ppduDurationLimit.IsNegative ())
                 {
-                  NS_LOG_DEBUG (" Return because the remaining TXOP time is less than the response duration");
+                  NS_LOG_DEBUG ("Return because the remaining TXOP time is less than the response duration");
                   return;
                 }
             }
@@ -837,6 +849,13 @@ MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
     {
       NS_LOG_DEBUG ("startTx size=" << psdu.second->GetSize () << ", to="
                     << psdu.second->GetAddr1 () << ", txop=" << m_currentTxop);
+    }
+
+  // Set the Duration/ID field for HE TB PPDUs
+  if (m_currentTxVector.GetPreambleType () == WIFI_PREAMBLE_HE_TB)
+    {
+      NS_ASSERT (m_currentPacket.size () == 1);
+      m_currentPacket.begin ()->second->SetDuration (duration);
     }
 
   if (m_txParams.MustSendRts ())
