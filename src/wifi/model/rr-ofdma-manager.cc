@@ -392,11 +392,22 @@ RrOfdmaManager::ComputeDlOfdmaInfo (void)
   if (m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_MU_BAR
       || m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_AGGREGATE_TF)
     {
+      Ptr<WifiRemoteStationManager> stationManager = GetWifiRemoteStationManager ();
       // The Trigger Frame to be returned is built from the TX vector used for the DL MU PPDU
       // (i.e., responses will use the same set of RUs) and modified to ensure that responses
       // are sent at a rate not higher than MCS 5.
       dlOfdmaInfo.trigger = GetTriggerFrameHeader (dlOfdmaInfo.txVector, 5);
       dlOfdmaInfo.trigger.SetUlLength (m_low->CalculateUlLengthForBlockAcks (dlOfdmaInfo.trigger, m_txParams));
+      dlOfdmaInfo.trigger.SetApTxPower (static_cast<int8_t> (m_low->GetPhy ()->GetPowerDbm (stationManager->GetDefaultTxPowerLevel ())));
+      for (auto itInfo = dlOfdmaInfo.trigger.begin (); itInfo != dlOfdmaInfo.trigger.end (); ++itInfo)
+        {
+          const auto staList = m_apMac->GetStaList ();
+          auto itAidAddr = staList.find (itInfo->GetAid12 ());
+          NS_ASSERT (itAidAddr != staList.end ());
+          int8_t rssi = static_cast<int8_t> (stationManager->GetMostRecentRssi (itAidAddr->second));
+          rssi = (rssi >= -20) ? -20 : ((rssi <= -110) ? -110 : rssi); //cap so as to keep within [-110; -20] dBm
+          itInfo->SetUlTargetRssi (rssi);
+        }
     }
 
   return dlOfdmaInfo;
