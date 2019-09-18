@@ -190,6 +190,7 @@ private:
   uint64_t m_nHolDelaySamples;
   std::map <uint64_t /* uid */, Time /* start */> m_appPacketTxMap;
   std::map <uint32_t /* nodeId */, std::vector<Time>  /* array of latencies */> m_appLatencyMap;
+  bool m_verbose;
 
   struct Stats
   {
@@ -248,7 +249,8 @@ WifiDlOfdmaExample::WifiDlOfdmaExample ()
     m_minHolDelay (0.0),
     m_maxHolDelay (0.0),
     m_avgHolDelay (0.0),
-    m_nHolDelaySamples (0)
+    m_nHolDelaySamples (0),
+    m_verbose (false)
 {
 }
 
@@ -281,6 +283,7 @@ WifiDlOfdmaExample::Config (int argc, char *argv[])
   cmd.AddValue ("transport", "Transport layer protocol (Udp/Tcp)", m_transport);
   cmd.AddValue ("queueDisc", "Queuing discipline to install on the AP (default/none)", m_queueDisc);
   cmd.AddValue ("warmup", "Duration of the warmup period (seconds)", m_warmup);
+  cmd.AddValue ("verbose", "Enable/disable all Wi-Fi debug traces", m_verbose);
   cmd.Parse (argc, argv);
 
   uint64_t phyRate = WifiPhy::GetHeMcs (m_mcs).GetDataRate (m_channelWidth, m_guardInterval, 1);
@@ -373,6 +376,10 @@ WifiDlOfdmaExample::Setup (void)
   phy.Set ("ChannelWidth", UintegerValue (m_channelWidth));
 
   WifiHelper wifi;
+  if (m_verbose)
+    {
+      wifi.EnableLogComponents ();
+    }
   wifi.SetStandard (WIFI_PHY_STANDARD_80211ax_5GHZ);
   std::ostringstream oss;
   oss << "HeMcs" << m_mcs;
@@ -620,7 +627,10 @@ WifiDlOfdmaExample::EstablishBaAgreement (Mac48Address bssid)
 
   V4PingHelper ping (m_staInterfaces.GetAddress (m_currentSta));
   ping.SetAttribute ("Interval", TimeValue (MilliSeconds (50)));
-  // ping.SetAttribute ("Verbose", BooleanValue (true));
+  if (m_verbose)
+    {
+      ping.SetAttribute ("Verbose", BooleanValue (true));
+    }
   ApplicationContainer pingApps = ping.Install (m_apNodes);
   pingApps.Stop (pingDuration);
 
