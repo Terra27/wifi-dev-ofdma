@@ -3266,8 +3266,9 @@ WifiPhy::StartReceivePayload (Ptr<Event> event)
               NS_LOG_DEBUG ("Receiving PSDU");
               m_signalNoiseMap.insert ({std::make_pair (ppdu->GetUid (), staId), SignalNoiseDbm ()});
               m_statusPerMpduMap.insert ({std::make_pair (ppdu->GetUid (), staId), std::vector<bool> ()});
-              if (psdu->GetNMpdus () > 1)
+              if (psdu->GetNMpdus () > 1 && txVector.GetPreambleType () != WIFI_PREAMBLE_HE_TB)
                 {
+                  // for HE TB PPDUs, ScheduleEndOfMpdus is called by StartReceiveOfdmaPayload
                   ScheduleEndOfMpdus (event);
                 }
               Time payloadDuration = ppdu->GetTxDuration () - CalculatePlcpPreambleAndHeaderDuration (txVector);
