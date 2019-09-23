@@ -42,6 +42,7 @@
 #include "ns3/wifi-mac-queue.h"
 #include "ns3/mac-low.h"
 #include "ns3/wifi-psdu.h"
+#include "ns3/ctrl-headers.h"
 #include "ns3/traffic-control-helper.h"
 #include <vector>
 #include <map>
@@ -149,8 +150,11 @@ private:
   double m_radius;          // meters
   bool m_enableDlOfdma;
   bool m_forceDlOfdma;
+  bool m_enableUlOfdma;
+  uint32_t m_ulPsduSize;
   uint16_t m_channelWidth;  // channel bandwidth
   uint8_t m_channelNumber;
+  uint16_t m_channelCenterFrequency;
   uint16_t m_guardInterval; // GI in nanoseconds
   uint8_t m_maxNRus;        // max number of RUs per MU PPDU
   uint32_t m_mcs;           // MCS value
@@ -192,25 +196,43 @@ private:
   std::map <uint64_t /* uid */, Time /* start */> m_appPacketTxMap;
   std::map <uint32_t /* nodeId */, std::vector<Time>  /* array of latencies */> m_appLatencyMap;
   bool m_verbose;
+  uint64_t m_nBasicTriggerFramesSent;
+  uint64_t m_nFailedTriggerFrames;  // no station responded
+  double m_minLengthRatio;
+  double m_maxLenghtRatio;
+  double m_avgLengthRatio;
+  Time m_tfUlLength;                // TX duration coded in UL Length subfield of Trigger Frame
+  Time m_overallTimeGrantedByTf;    // m_tfUlLength times the number of addressed stations
+  Time m_responsesToLastTfDuration; // sum of the durations of the HE TB PPDUs in response to last TF
 
-  struct Stats
+  struct DlStats
   {
-    uint64_t failed;
-    uint64_t expired;
-    uint32_t minAmpduSize;
-    uint32_t maxAmpduSize;
-    uint64_t nAmpdus;
-    double minAmpduRatio;
-    double maxAmpduRatio;
-    double avgAmpduRatio;
-    uint64_t nAmpduRatioSamples;
-    Time lastTxTime;
-    double minHolDelay;
-    double maxHolDelay;
-    double avgHolDelay;
-    uint64_t nHolDelaySamples;
+    uint64_t failed {0};
+    uint64_t expired {0};
+    uint32_t minAmpduSize {0};
+    uint32_t maxAmpduSize {0};
+    uint64_t nAmpdus {0};
+    double minAmpduRatio {0.0};
+    double maxAmpduRatio {0.0};
+    double avgAmpduRatio {0.0};
+    uint64_t nAmpduRatioSamples {0};
+    Time lastTxTime {Seconds (0)};
+    double minHolDelay {0.0};
+    double maxHolDelay {0.0};
+    double avgHolDelay {0.0};
+    uint64_t nHolDelaySamples {0};
   };
-  std::map<Mac48Address, Stats> m_stats;
+  std::map<Mac48Address, DlStats> m_dlStats;
+
+  struct UlStats
+  {
+    double minLengthRatio {0.0};
+    double maxLenghtRatio {0.0};
+    double avgLengthRatio {0.0};
+    uint64_t nLengthRatioSamples {0};  // count of HE TB PPDUs sent
+    uint64_t nSolicitingTriggerFrames {0};
+  };
+  std::map<Mac48Address, UlStats> m_ulStats;
 };
 
 WifiDlOfdmaExample::WifiDlOfdmaExample ()
@@ -220,8 +242,11 @@ WifiDlOfdmaExample::WifiDlOfdmaExample ()
     m_radius (10),
     m_enableDlOfdma (true),
     m_forceDlOfdma (true),
+    m_enableUlOfdma (false),
+    m_ulPsduSize (0),
     m_channelWidth (20),
     m_channelNumber (36),
+    m_channelCenterFrequency (0),
     m_guardInterval (3200),
     m_maxNRus (4),
     m_mcs (0),
@@ -252,7 +277,15 @@ WifiDlOfdmaExample::WifiDlOfdmaExample ()
     m_maxHolDelay (0.0),
     m_avgHolDelay (0.0),
     m_nHolDelaySamples (0),
-    m_verbose (false)
+    m_verbose (false),
+    m_nBasicTriggerFramesSent (0),
+    m_nFailedTriggerFrames (0),
+    m_minLengthRatio (0.0),
+    m_maxLenghtRatio (0.0),
+    m_avgLengthRatio (0.0),
+    m_tfUlLength (Seconds (0)),
+    m_overallTimeGrantedByTf (Seconds (0)),
+    m_responsesToLastTfDuration (Seconds (0))
 {
 }
 
@@ -269,6 +302,8 @@ WifiDlOfdmaExample::Config (int argc, char *argv[])
   cmd.AddValue ("enableDlOfdma", "Enable/disable DL OFDMA", m_enableDlOfdma);
   cmd.AddValue ("forceDlOfdma", "The RR scheduler always returns DL OFDMA", m_forceDlOfdma);
   cmd.AddValue ("dlAckType", "Ack sequence type for DL OFDMA (1-3)", m_dlAckSeqType);
+  cmd.AddValue ("enableUlOfdma", "The RR scheduler returns UL OFDMA after DL OFDMA", m_enableUlOfdma);
+  cmd.AddValue ("ulPsduSize", "Max size in bytes of HE TB PPDUs", m_ulPsduSize);
   cmd.AddValue ("channelWidth", "Channel bandwidth (20, 40, 80, 160)", m_channelWidth);
   cmd.AddValue ("guardInterval", "Guard Interval (800, 1600, 3200)", m_guardInterval);
   cmd.AddValue ("maxRus", "Maximum number of RUs allocated per DL MU PPDU", m_maxNRus);
@@ -412,7 +447,9 @@ WifiDlOfdmaExample::Setup (void)
     {
       mac.SetOfdmaManager ("ns3::RrOfdmaManager",
                            "NStations", UintegerValue (m_maxNRus),
-                           "ForceDlOfdma", BooleanValue (m_forceDlOfdma));
+                           "ForceDlOfdma", BooleanValue (m_forceDlOfdma),
+                           "EnableUlOfdma", BooleanValue (m_enableUlOfdma),
+                           "UlPsduSize", UintegerValue (m_ulPsduSize));
     }
 
   mac.SetType ("ns3::StaWifiMac",
@@ -427,6 +464,7 @@ WifiDlOfdmaExample::Setup (void)
   Ptr<WifiNetDevice> dev = DynamicCast<WifiNetDevice> (m_apDevices.Get (0));
   dev->GetMac ()->SetAttribute ("BE_MaxAmsduSize", UintegerValue (m_maxAmsduSize));
   dev->GetMac ()->SetAttribute ("BE_MaxAmpduSize", UintegerValue (m_maxAmpduSize));
+  m_channelCenterFrequency = dev->GetPhy ()->GetFrequency ();
   // Configure TXOP Limit on the AP
   PointerValue ptr;
   dev->GetMac ()->GetAttribute ("BE_Txop", ptr);
@@ -438,7 +476,8 @@ WifiDlOfdmaExample::Setup (void)
       dev = DynamicCast<WifiNetDevice> (m_staDevices.Get (i));
       dev->GetMac ()->SetAttribute ("BE_MaxAmsduSize", UintegerValue (m_maxAmsduSize));
       dev->GetMac ()->SetAttribute ("BE_MaxAmpduSize", UintegerValue (m_maxAmpduSize));
-      m_stats[dev->GetMac ()->GetAddress ()] = {0, 0, 0, 0, 0, 0.0, 0.0, 0.0, 0, Seconds (0), 0.0, 0.0, 0.0, 0};
+      m_dlStats[dev->GetMac ()->GetAddress ()] = DlStats ();
+      m_ulStats[dev->GetMac ()->GetAddress ()] = UlStats ();
     }
 
   // Setting mobility model
@@ -528,8 +567,8 @@ WifiDlOfdmaExample::Run (void)
                          << "-----------" << std::endl;
   for (uint32_t i = 0; i < m_staNodes.GetN (); i++)
     {
-      auto it = m_stats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
-      NS_ASSERT (it != m_stats.end ());
+      auto it = m_dlStats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
+      NS_ASSERT (it != m_dlStats.end ());
       failed = it->second.failed;
       totalFailed += failed;
       std::cout << "STA_" << i << ": " << failed << " ";
@@ -542,8 +581,8 @@ WifiDlOfdmaExample::Run (void)
                          << "-------------" << std::endl;
   for (uint32_t i = 0; i < m_staNodes.GetN (); i++)
     {
-      auto it = m_stats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
-      NS_ASSERT (it != m_stats.end ());
+      auto it = m_dlStats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
+      NS_ASSERT (it != m_dlStats.end ());
       expired = it->second.expired;
       totalExpired += expired;
       std::cout << "STA_" << i << ": " << expired << " ";
@@ -554,8 +593,8 @@ WifiDlOfdmaExample::Run (void)
                          << "---------------------------" << std::endl;
   for (uint32_t i = 0; i < m_staNodes.GetN (); i++)
     {
-      auto it = m_stats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
-      NS_ASSERT (it != m_stats.end ());
+      auto it = m_dlStats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
+      NS_ASSERT (it != m_dlStats.end ());
       std::cout << "STA_" << i << ": (" << it->second.minAmpduSize << "," << it->second.maxAmpduSize
                                << "," << it->second.nAmpdus << ") ";
     }
@@ -566,8 +605,8 @@ WifiDlOfdmaExample::Run (void)
                          << "----------------------------------------------------------------" << std::endl;
   for (uint32_t i = 0; i < m_staNodes.GetN (); i++)
     {
-      auto it = m_stats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
-      NS_ASSERT (it != m_stats.end ());
+      auto it = m_dlStats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
+      NS_ASSERT (it != m_dlStats.end ());
       std::cout << std::fixed << std::setprecision (3)
                 << "STA_" << i << ": (" << it->second.minAmpduRatio << ", " << it->second.maxAmpduRatio
                                << ", " << it->second.avgAmpduRatio << ") ";
@@ -582,8 +621,8 @@ WifiDlOfdmaExample::Run (void)
                          << "----------------------------------------------" << std::endl;
   for (uint32_t i = 0; i < m_staNodes.GetN (); i++)
     {
-      auto it = m_stats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
-      NS_ASSERT (it != m_stats.end ());
+      auto it = m_dlStats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
+      NS_ASSERT (it != m_dlStats.end ());
       std::cout << std::fixed << std::setprecision (3)
                 << "STA_" << i << ": (" << it->second.minHolDelay << ", " << it->second.maxHolDelay
                                << ", " << it->second.avgHolDelay << ") ";
@@ -604,7 +643,49 @@ WifiDlOfdmaExample::Run (void)
       double average_latency_ms = (std::accumulate (it->second.begin (), it->second.end (), NanoSeconds (0))).ToDouble (Time::MS) / it->second.size ();
       std::cout << "STA_" << i << ": " << average_latency_ms << " ";
     }
-  std::cout << std::endl << std::endl;
+
+  std::cout << std::endl << std::endl << "Unresponded TFs ratio/(Min,Max,Avg) HE TB PPDU duration to UL Length ratio"
+                         << std::endl << "--------------------------------------------------------------------------"
+                         << std::endl;
+  for (uint32_t i = 0; i < m_staNodes.GetN (); i++)
+    {
+      auto it = m_ulStats.find (DynamicCast<WifiNetDevice> (m_staDevices.Get (i))->GetMac ()->GetAddress ());
+      NS_ASSERT (it != m_ulStats.end ());
+      double unrespondedTfRatio = 0.0;
+      if (it->second.nSolicitingTriggerFrames > 0)
+        {
+          unrespondedTfRatio = static_cast<double> (it->second.nSolicitingTriggerFrames - it->second.nLengthRatioSamples)
+                               / it->second.nSolicitingTriggerFrames;
+        }
+
+      std::cout << std::fixed << std::setprecision (3)
+                << "STA_" << i << ": " << unrespondedTfRatio << "/(" << it->second.minLengthRatio
+                               << ", " << it->second.maxLenghtRatio
+                               << ", " << it->second.avgLengthRatio << ") ";
+    }
+
+  std::cout << std::endl << std::endl << "(Failed, Sent) Basic Trigger Frames: ("
+                                      << m_nFailedTriggerFrames << ", "
+                                      << m_nBasicTriggerFramesSent << ")" << std::endl;
+
+  uint64_t heTbPPduTotalCount = 0;
+  uint64_t solicitingTriggerFrames = 0;
+  for (auto& ulStaStats : m_ulStats)
+    {
+      heTbPPduTotalCount += ulStaStats.second.nLengthRatioSamples;
+      solicitingTriggerFrames += ulStaStats.second.nSolicitingTriggerFrames;
+    }
+  double missingHeTbPpduRatio = 0.0;
+  if (solicitingTriggerFrames > 0)
+    {
+      missingHeTbPpduRatio = static_cast<double> (solicitingTriggerFrames - heTbPPduTotalCount)
+                             / solicitingTriggerFrames;
+    }
+  std::cout << std::endl << "Missing HE TB PPDUs ratio: " << missingHeTbPpduRatio << std::endl;
+  std::cout << std::endl << "HE TB PPDU completeness: ("
+                         << m_minLengthRatio << ", "
+                         << m_maxLenghtRatio << ", "
+                         << m_avgLengthRatio << ")" << std::endl << std::endl;
 
   m_appPacketTxMap.clear ();
   m_appLatencyMap.clear ();
@@ -735,6 +816,15 @@ WifiDlOfdmaExample::StartStatistics (void)
       m_rxStart[i] = DynamicCast<PacketSink> (m_sinkApps.Get (i))->GetTotalRx ();
     }
 
+  // Trace PSDUs forwarded down to the PHY on each station
+  for (uint32_t i = 0; i < m_staDevices.GetN (); i++)
+    {
+      dev = DynamicCast<WifiNetDevice> (m_staDevices.Get (i));
+      dev->GetMac ()->GetAttribute ("BE_Txop", ptr);
+      ptr.Get<QosTxop> ()->GetLow ()->TraceConnectWithoutContext ("ForwardDown",
+                                                                  MakeCallback (&WifiDlOfdmaExample::NotifyPsduForwardedDown, this));
+    }
+
   Config::Connect ("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/$ns3::WifiMac/MacTx", MakeCallback (&WifiDlOfdmaExample::NotifyApplicationTx, this));
   Config::Connect ("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/$ns3::WifiMac/MacRx", MakeCallback (&WifiDlOfdmaExample::NotifyApplicationRx, this));
 
@@ -774,6 +864,15 @@ WifiDlOfdmaExample::StopStatistics (void)
       m_clientApps.Get (i)->Dispose ();
     }
 
+  // Stop tracing PSDUs forwarded down to the PHY on each station
+  for (uint32_t i = 0; i < m_staDevices.GetN (); i++)
+    {
+      dev = DynamicCast<WifiNetDevice> (m_staDevices.Get (i));
+      dev->GetMac ()->GetAttribute ("BE_Txop", ptr);
+      ptr.Get<QosTxop> ()->GetLow ()->TraceDisconnectWithoutContext ("ForwardDown",
+                                                                     MakeCallback (&WifiDlOfdmaExample::NotifyPsduForwardedDown, this));
+    }
+
   Config::Disconnect ("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/$ns3::WifiMac/MacTx", MakeCallback (&WifiDlOfdmaExample::NotifyApplicationTx, this));
   Config::Disconnect ("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/$ns3::WifiMac/MacRx", MakeCallback (&WifiDlOfdmaExample::NotifyApplicationRx, this));
 }
@@ -781,16 +880,16 @@ WifiDlOfdmaExample::StopStatistics (void)
 void
 WifiDlOfdmaExample::NotifyTxFailed (const WifiMacHeader& hdr)
 {
-  auto it = m_stats.find (hdr.GetAddr1 ());
-  NS_ASSERT (it != m_stats.end ());
+  auto it = m_dlStats.find (hdr.GetAddr1 ());
+  NS_ASSERT (it != m_dlStats.end ());
   it->second.failed++;
 }
 
 void
 WifiDlOfdmaExample::NotifyMsduExpired (Ptr<const WifiMacQueueItem> item)
 {
-  auto it = m_stats.find (item->GetHeader ().GetAddr1 ());
-  NS_ASSERT (it != m_stats.end ());
+  auto it = m_dlStats.find (item->GetHeader ().GetAddr1 ());
+  NS_ASSERT (it != m_dlStats.end ());
   it->second.expired++;
 }
 
@@ -830,8 +929,8 @@ WifiDlOfdmaExample::NotifyMsduDequeuedFromEdcaQueue (Ptr<const WifiMacQueueItem>
     }
   m_lastTxTime = Simulator::Now ();
 
-  auto it = m_stats.find (item->GetHeader ().GetAddr1 ());
-  NS_ASSERT (it != m_stats.end ());
+  auto it = m_dlStats.find (item->GetHeader ().GetAddr1 ());
+  NS_ASSERT (it != m_dlStats.end ());
 
   if (it->second.lastTxTime.IsStrictlyPositive ())
     {
@@ -859,7 +958,37 @@ WifiDlOfdmaExample::NotifyMsduDequeuedFromEdcaQueue (Ptr<const WifiMacQueueItem>
 void
 WifiDlOfdmaExample::NotifyPsduForwardedDown (WifiPsduMap psduMap, WifiTxVector txVector)
 {
-  if (psduMap.begin ()->second->GetHeader (0).IsQosData ())
+  Ptr<WifiNetDevice> dev = DynamicCast<WifiNetDevice> (m_apDevices.Get (0));
+  Mac48Address apAddress = dev->GetMac ()->GetAddress ();
+
+  if (psduMap.size () == 1 && psduMap.begin ()->second->GetAddr1 () == apAddress
+      && psduMap.begin ()->second->GetHeader (0).IsQosData ())
+    {
+      // Uplink frame
+      if (txVector.GetPreambleType () == WIFI_PREAMBLE_HE_TB)
+        {
+          // HE TB PPDU
+          auto it = m_ulStats.find (psduMap.begin ()->second->GetAddr2 ());
+          NS_ASSERT (it != m_ulStats.end ());
+          Time txDuration = WifiPhy::CalculateTxDuration (psduMap, txVector, m_channelCenterFrequency);
+          m_responsesToLastTfDuration += txDuration;
+          double currRatio = txDuration.GetSeconds () / m_tfUlLength.GetSeconds ();
+
+          if (it->second.minLengthRatio == 0 || currRatio < it->second.minLengthRatio)
+            {
+              it->second.minLengthRatio = currRatio;
+            }
+          if (currRatio > it->second.maxLenghtRatio)
+            {
+              it->second.maxLenghtRatio = currRatio;
+            }
+          it->second.avgLengthRatio = (it->second.avgLengthRatio * it->second.nLengthRatioSamples + currRatio)
+                                      / (it->second.nLengthRatioSamples + 1);
+          it->second.nLengthRatioSamples++;
+        }
+    }
+  // Downlink frame
+  else if (psduMap.begin ()->second->GetHeader (0).IsQosData ())
     {
       uint32_t maxAmpduSize = 0;
       uint32_t ampduSizeSum = 0;
@@ -873,8 +1002,8 @@ WifiDlOfdmaExample::NotifyPsduForwardedDown (WifiPsduMap psduMap, WifiTxVector t
             }
           ampduSizeSum += currSize;
 
-          auto it = m_stats.find (psdu.second->GetAddr1 ());
-          NS_ASSERT (it != m_stats.end ());
+          auto it = m_dlStats.find (psdu.second->GetAddr1 ());
+          NS_ASSERT (it != m_dlStats.end ());
           if (it->second.minAmpduSize == 0 || currSize < it->second.minAmpduSize)
             {
               it->second.minAmpduSize = currSize;
@@ -905,7 +1034,7 @@ WifiDlOfdmaExample::NotifyPsduForwardedDown (WifiPsduMap psduMap, WifiTxVector t
           m_avgAmpduRatio = (m_avgAmpduRatio * m_nAmpduRatioSamples + currRatio) / (m_nAmpduRatioSamples + 1);
           m_nAmpduRatioSamples++;
 
-          Ptr<WifiNetDevice> dev = DynamicCast<WifiNetDevice> (m_apDevices.Get (0));
+          dev = DynamicCast<WifiNetDevice> (m_apDevices.Get (0));
           Ptr<ApWifiMac> mac = DynamicCast<ApWifiMac> (dev->GetMac ());
 
           for (auto& userInfo : txVector.GetHeMuUserInfoMap ())
@@ -923,8 +1052,8 @@ WifiDlOfdmaExample::NotifyPsduForwardedDown (WifiPsduMap psduMap, WifiTxVector t
                 }
 
               Mac48Address address = mac->GetStaList ().at (userInfo.first);
-              auto it = m_stats.find (address);
-              NS_ASSERT (it != m_stats.end ());
+              auto it = m_dlStats.find (address);
+              NS_ASSERT (it != m_dlStats.end ());
 
               if (it->second.minAmpduRatio == 0 || currRatio < it->second.minAmpduRatio)
                 {
@@ -937,6 +1066,57 @@ WifiDlOfdmaExample::NotifyPsduForwardedDown (WifiPsduMap psduMap, WifiTxVector t
               it->second.avgAmpduRatio = (it->second.avgAmpduRatio * it->second.nAmpduRatioSamples + currRatio)
                                          / (it->second.nAmpduRatioSamples + 1);
               it->second.nAmpduRatioSamples++;
+            }
+        }
+    }
+  else if (psduMap.size () == 1 && psduMap.begin ()->second->GetHeader (0).IsTrigger ())
+    {
+      CtrlTriggerHeader trigger;
+      psduMap.begin ()->second->GetPayload (0)->PeekHeader (trigger);
+
+      if (trigger.IsBasic ())
+        {
+          if (m_tfUlLength.IsStrictlyPositive ())
+            {
+              // This is not the first Trigger Frame being sent
+              if (m_responsesToLastTfDuration.IsZero ())
+                {
+                  // no station responded to the previous TF
+                  m_nFailedTriggerFrames++;
+                }
+              else
+                {
+                  double currRatio = m_responsesToLastTfDuration.GetSeconds () / m_overallTimeGrantedByTf.GetSeconds ();
+
+                  if (m_minLengthRatio == 0 || currRatio < m_minLengthRatio)
+                    {
+                      m_minLengthRatio = currRatio;
+                    }
+                  if (currRatio > m_maxLenghtRatio)
+                    {
+                      m_maxLenghtRatio = currRatio;
+                    }
+                  uint64_t samples = m_nBasicTriggerFramesSent - 1 - m_nFailedTriggerFrames;
+                  m_avgLengthRatio = (m_avgLengthRatio * samples + currRatio) / (samples + 1);
+                }
+            }
+
+          m_nBasicTriggerFramesSent++;
+          m_responsesToLastTfDuration = Seconds (0);
+          WifiTxVector heTbTxVector = trigger.GetHeTbTxVector (trigger.begin ()->GetAid12 ());
+          m_tfUlLength = WifiPhy::ConvertLSigLengthToHeTbPpduDuration (trigger.GetUlLength (), heTbTxVector,
+                                                                       m_channelCenterFrequency);
+          m_overallTimeGrantedByTf = m_tfUlLength * trigger.GetNUserInfoFields ();
+
+          dev = DynamicCast<WifiNetDevice> (m_apDevices.Get (0));
+          Ptr<ApWifiMac> mac = DynamicCast<ApWifiMac> (dev->GetMac ());
+
+          for (auto& userInfo : trigger)
+            {
+              Mac48Address address = mac->GetStaList ().at (userInfo.GetAid12 ());
+              auto it = m_ulStats.find (address);
+              NS_ASSERT (it != m_ulStats.end ());
+              it->second.nSolicitingTriggerFrames++;
             }
         }
     }
