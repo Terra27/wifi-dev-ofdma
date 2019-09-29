@@ -141,6 +141,13 @@ ConstantWifiAckPolicySelector::UpdateTxParams (Ptr<WifiPsdu> psdu, MacLowTransmi
       return;
     }
 
+  // If QosTxop forced the use of Block Ack QoS policy, do not make any change
+  if (params.MustSendBlockAckRequest ())
+    {
+      NS_LOG_DEBUG ("Use Block Ack policy as requested");
+      return;
+    }
+
   if (!IsResponseNeeded (psdu, params))
     {
       NS_LOG_DEBUG ("A response is not needed: no ack for now, use Block Ack policy");

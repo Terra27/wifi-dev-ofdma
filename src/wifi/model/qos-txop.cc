@@ -228,9 +228,9 @@ QosTxop::PrepareMuBar (CtrlTriggerHeader trigger,
 }
 
 void
-QosTxop::ScheduleBar (Ptr<const WifiMacQueueItem> bar)
+QosTxop::ScheduleBar (Ptr<const WifiMacQueueItem> bar, bool skipIfNoData)
 {
-  m_baManager->ScheduleBar (bar);
+  m_baManager->ScheduleBar (bar, skipIfNoData);
 }
 
 void
@@ -1074,7 +1074,32 @@ QosTxop::MissedBlockAck (std::map <uint16_t, Ptr<WifiPsdu>> psduMap, const MacLo
               else
                 {
                   NS_LOG_DEBUG ("Block Ack Request Fail");
-                  GetBaManager (tid)->DiscardOutstandingMpdus (m_currentMpdu->GetHeader ().GetAddr1 (), tid);
+                  // if a BA agreement exists, we can get here if there is no outstanding
+                  // MPDU that has not expired yet.
+                  if (GetBaManager (tid)->ExistsAgreementInState (m_currentMpdu->GetHeader ().GetAddr1 (), tid,
+                                                                  OriginatorBlockAckAgreement::ESTABLISHED))
+                    {
+                      // If there is any (expired) outstanding MPDU, request the BA manager to discard
+                      // it, which involves the scheduling of a BAR to advance the recipient's window
+                      if (GetBaManager (tid)->GetNBufferedPackets (m_currentMpdu->GetHeader ().GetAddr1 (), tid) > 0)
+                        {
+                          GetBaManager (tid)->DiscardOutstandingMpdus (m_currentMpdu->GetHeader ().GetAddr1 (), tid);
+                        }
+                      // otherwise, it means that we have not received a Block Ack in response to a
+                      // Block Ack Request sent while no frame was outstanding, whose purpose was therefore
+                      // to advance the recipient's window. If there is any (unexpired) data frame queued,
+                      // keep transmitting a Block Ack Request to advance the recipient's window.
+                      else if (m_low->GetEdca (tid)->PeekNextFrame (tid, m_currentMpdu->GetHeader ().GetAddr1 ()) != 0)
+                        {
+                          ScheduleBar (PrepareBlockAckRequest (m_currentMpdu->GetHeader ().GetAddr1 (), tid));
+                        }
+                      else
+                        {
+                          // No data frame is queued. Record that a Block Ack Request must be sent before
+                          // any data that may arrive later.
+                          ScheduleBar (PrepareBlockAckRequest (m_currentMpdu->GetHeader ().GetAddr1 (), tid), true);
+                        }
+                    }
                 }
             }
           else

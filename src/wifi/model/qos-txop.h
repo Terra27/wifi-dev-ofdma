@@ -221,11 +221,12 @@ public:
                                             std::map<uint16_t, std::pair<Mac48Address, uint8_t>> recipients) const;
   /**
    * \param bar the Block Ack Request to schedule
+   * \param skipIfNoData do not send if there is no data queued
    *
    * Request the Block Ack manager to schedule the transmission of the given
    * Block Ack Request.
    */
-  void ScheduleBar (Ptr<const WifiMacQueueItem> bar);
+  void ScheduleBar (Ptr<const WifiMacQueueItem> bar, bool skipIfNoData = false);
   /**
    * \param recipient Address of recipient.
    * \param tid Traffic ID.

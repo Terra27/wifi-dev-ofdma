@@ -55,9 +55,10 @@ struct Bar
    * \param bar the BAR
    * \param tid the Traffic ID
    */
-  Bar (Ptr<const WifiMacQueueItem> bar, uint8_t tid);
+  Bar (Ptr<const WifiMacQueueItem> bar, uint8_t tid, bool skipIfNoData = false);
   Ptr<const WifiMacQueueItem> bar;  ///< block ack request
   uint8_t tid;                      ///< TID (unused if MU-BAR)
+  bool skipIfNoData;                ///< do not send if there is no data queued (unused if MU-BAR)
 };
 
 
@@ -161,7 +162,7 @@ public:
    * \return true if there are packets that need of retransmission or at least a BAR is scheduled,
    *         false otherwise
    */
-  bool HasPackets (void) const;
+  bool HasPackets (void);
   /**
    * Invoked upon receipt of an ack frame after the transmission of a QoS data frame
    * sent under an established Block Ack agreement. Remove the acknowledged frame
@@ -412,13 +413,14 @@ public:
 
   /**
    * \param bar the Block Ack Request to enqueue
+   * \param skipIfNoData do not send if there is no data queued
    *
    * Enqueue the given Block Ack Request into the queue storing the next BAR
    * frames to transmit. If a BAR for the same recipient and TID is already present
    * in the queue, it is replaced by the new one. If the given BAR is retransmitted,
    * it is placed at the head of the queue, otherwise at the tail.
    */
-  void ScheduleBar (Ptr<const WifiMacQueueItem> bar);
+  void ScheduleBar (Ptr<const WifiMacQueueItem> bar, bool skipIfNoData = false);
 
 private:
   /**
