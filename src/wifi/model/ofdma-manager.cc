@@ -199,4 +199,21 @@ OfdmaManager::GetResponseDuration (const MacLowTransmissionParameters& params, W
   return response;
 }
 
+void
+OfdmaManager::SetTargetRssi (CtrlTriggerHeader& trigger) const
+{
+  NS_LOG_FUNCTION (this);
+
+  trigger.SetApTxPower (static_cast<int8_t> (m_low->GetPhy ()->GetPowerDbm (GetWifiRemoteStationManager ()->GetDefaultTxPowerLevel ())));
+  for (auto& userInfo : trigger)
+    {
+      const auto staList = m_apMac->GetStaList ();
+      auto itAidAddr = staList.find (userInfo.GetAid12 ());
+      NS_ASSERT (itAidAddr != staList.end ());
+      int8_t rssi = static_cast<int8_t> (GetWifiRemoteStationManager ()->GetMostRecentRssi (itAidAddr->second));
+      rssi = (rssi >= -20) ? -20 : ((rssi <= -110) ? -110 : rssi); //cap so as to keep within [-110; -20] dBm
+      userInfo.SetUlTargetRssi (rssi);
+    }
+}
+
 } //namespace ns3

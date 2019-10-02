@@ -113,7 +113,10 @@ private:
   WifiTxVector m_txVector;                                     //!< TX vector
   MacLowTransmissionParameters m_txParams;                     //!< TX params
   DlMuAckSequenceType m_dlMuAckSequence;                       //!< DL MU ack sequence type
+  UlMuAckSequenceType m_ulMuAckSequence;                       //!< UL MU ack sequence type
   bool m_forceDlOfdma;                                         //!< return DL_OFDMA even if no DL MU PPDU was built
+  bool m_enableUlOfdma;                                        //!< enable the scheduler to also return UL_OFDMA
+  uint32_t m_ulPsduSize;                                       //!< the size in byte of the solicited PSDU
   uint16_t m_bw;                                               //!< for TESTING only
 };
 

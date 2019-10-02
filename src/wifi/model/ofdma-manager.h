@@ -132,6 +132,14 @@ protected:
    */
   Time GetResponseDuration (const MacLowTransmissionParameters& params, WifiTxVector txVector,
                             CtrlTriggerHeader trigger = CtrlTriggerHeader ()) const;
+  /**
+   * Set the UL Target RSSI subfield of every User Info fields of the given
+   * Trigger Frame to the most recent RSSI observed from the corresponding
+   * station.
+   *
+   * \param trigger the given Trigger Frame
+   */
+  virtual void SetTargetRssi (CtrlTriggerHeader& trigger) const;
 
   virtual void DoDispose (void);
   virtual void NotifyNewAggregate (void);

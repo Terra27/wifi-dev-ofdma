@@ -48,6 +48,16 @@ RrOfdmaManager::GetTypeId (void)
                    BooleanValue (false),
                    MakeBooleanAccessor (&RrOfdmaManager::m_forceDlOfdma),
                    MakeBooleanChecker ())
+    .AddAttribute ("EnableUlOfdma",
+                   "If enabled, return UL_OFDMA if DL_OFDMA was returned the previous time.",
+                   BooleanValue (true),
+                   MakeBooleanAccessor (&RrOfdmaManager::m_enableUlOfdma),
+                   MakeBooleanChecker ())
+    .AddAttribute ("UlPsduSize",
+                   "The size in bytes of the solicited PSDU (to be sent in an HE TB PPDU)",
+                   UintegerValue (500),
+                   MakeUintegerAccessor (&RrOfdmaManager::m_ulPsduSize),
+                   MakeUintegerChecker<uint32_t> ())
     .AddAttribute ("ChannelBw",
                    "For TESTING only",
                    UintegerValue (20),
@@ -133,6 +143,158 @@ RrOfdmaManager::SelectTxFormat (Ptr<const WifiMacQueueItem> mpdu)
   // --- --- ---
   NS_LOG_FUNCTION (this << *mpdu);
   NS_ASSERT (mpdu->GetHeader ().IsQosData ());
+
+  if (m_enableUlOfdma && GetTxFormat () == DL_OFDMA)
+    {
+      // check if an UL OFDMA transmission is possible after a DL OFDMA transmission
+      NS_ABORT_MSG_IF (m_ulPsduSize == 0, "The UlPsduSize attribute must be set to a non-null value");
+
+      Ptr<QosTxop> txop = m_qosTxop[QosUtilsMapTidToAc (mpdu->GetHeader ().GetQosTid ())];
+      m_ulMuAckSequence = txop->GetAckPolicySelector ()->GetAckSequenceForUlMu ();
+      MacLowTransmissionParameters params;
+      params.SetUlMuAckSequenceType (m_ulMuAckSequence);
+      BlockAckType baType;
+
+      if (m_ulMuAckSequence == UL_MULTI_STA_BLOCK_ACK)
+        {
+          baType = BlockAckType::MULTI_STA;
+          for (auto& userInfo : m_txVector.GetHeMuUserInfoMap ())
+            {
+              auto addressIt = m_apMac->GetStaList ().find (userInfo.first);
+              if (addressIt != m_apMac->GetStaList ().end ())
+                {
+                  baType.m_bitmapLen.push_back (32);
+                  params.EnableBlockAck (addressIt->second, baType);
+                }
+              else
+                {
+                  NS_LOG_WARN ("Maybe station with AID=" << userInfo.first << " left the BSS since the last MU DL transmission?");
+                }
+            }
+        }
+      else
+        {
+          NS_FATAL_ERROR ("Sending Block Acks in an MU DL PPDU is not supported yet");
+        }
+
+      CtrlTriggerHeader trigger (TriggerFrameType::BASIC_TRIGGER, m_txVector);
+
+      // compute the maximum amount of time that can be granted to stations.
+      // This value is limited by the max PPDU duration
+      Time maxDuration = GetPpduMaxTime (m_txVector.GetPreambleType ());
+
+      // compute the time required by stations based on the buffer status reports, if any
+      uint32_t maxBufferSize = 0;
+
+      for (auto& userInfo : m_txVector.GetHeMuUserInfoMap ())
+        {
+          auto addressIt = m_apMac->GetStaList ().find (userInfo.first);
+          if (addressIt != m_apMac->GetStaList ().end ())
+            {
+              uint8_t queueSize = m_apMac->GetMaxBufferStatus (addressIt->second);
+              if (queueSize == 255)
+                {
+                  NS_LOG_DEBUG ("Buffer status of station " << addressIt->second << " is unknown");
+                  maxBufferSize = std::max (maxBufferSize, m_ulPsduSize);
+                }
+              else if (queueSize == 254)
+                {
+                  NS_LOG_DEBUG ("Buffer status of station " << addressIt->second << " is not limited");
+                  maxBufferSize = 0xffffffff;
+                  break;
+                }
+              else
+                {
+                  NS_LOG_DEBUG ("Buffer status of station " << addressIt->second << " is " << +queueSize);
+                  maxBufferSize = std::max (maxBufferSize, static_cast<uint32_t> (queueSize * 256));
+                }
+            }
+          else
+            {
+              NS_LOG_WARN ("Maybe station with AID=" << userInfo.first << " left the BSS since the last MU DL transmission?");
+            }
+        }
+
+      // if the maximum buffer size is 0, skip UL OFDMA and proceed with trying DL OFDMA
+      if (maxBufferSize > 0)
+        {
+          // if we are within a TXOP, we have to consider the response time and the
+          // remaining TXOP duration
+          if (txop->GetTxopLimit ().IsStrictlyPositive ())
+            {
+              // we need to define the HE TB PPDU duration in order to compute the response to
+              // the Trigger Frame. Let's use 1 ms for this purpose. We'll subtract it later.
+              uint16_t length = WifiPhy::ConvertHeTbPpduDurationToLSigLength (MilliSeconds (1),
+                                                                              m_low->GetPhy ()->GetFrequency ());
+              trigger.SetUlLength (length);
+
+              Ptr<Packet> packet = Create<Packet> ();
+              packet->AddHeader (trigger);
+              WifiMacHeader hdr;
+              hdr.SetType (WIFI_MAC_CTL_TRIGGER);
+              hdr.SetAddr1 (Mac48Address::GetBroadcast ());
+              Ptr<WifiMacQueueItem> item = Create<WifiMacQueueItem> (packet, hdr);
+
+              Time response = m_low->GetResponseDuration (params, m_txVector, item);
+
+              // Add the time to transmit the Trigger Frame itself
+              WifiTxVector txVector = GetWifiRemoteStationManager ()->GetRtsTxVector (hdr.GetAddr1 (), &hdr, packet);
+
+              response += m_low->GetPhy ()->CalculateTxDuration (item->GetSize (), txVector,
+                                                                 m_low->GetPhy ()->GetFrequency ());
+
+              // Subtract the duration of the HE TB PPDU
+              response -= WifiPhy::ConvertLSigLengthToHeTbPpduDuration (length, m_txVector,
+                                                                        m_low->GetPhy ()->GetFrequency ());
+
+              if (response > txop->GetTxopRemaining ())
+                {
+                  // an UL OFDMA transmission is not possible. Reset m_staInfo and return DL_OFDMA.
+                  // In this way, no transmission will occur now and the next time we will try again
+                  // performing an UL OFDMA transmission.
+                  NS_LOG_DEBUG ("Remaining TXOP duration is not enough for UL MU exchange");
+                  m_staInfo.clear ();
+                  return DL_OFDMA;
+                }
+
+              maxDuration = Min (maxDuration, txop->GetTxopRemaining () - response);
+            }
+
+          Time bufferTxTime = m_low->GetPhy ()->CalculateTxDuration (maxBufferSize, m_txVector,
+                                                                     m_low->GetPhy ()->GetFrequency (),
+                                                                     trigger.begin ()->GetAid12 ());
+          if (bufferTxTime < maxDuration)
+            {
+              // the maximum buffer size can be transmitted within the allowed time
+              maxDuration = bufferTxTime;
+            }
+          else
+            {
+              // maxDuration may be a too short time. If it does not allow to transmit
+              // at least m_ulPsduSize bytes, give up the UL MU transmission for now
+              Time minDuration = m_low->GetPhy ()->CalculateTxDuration (m_ulPsduSize, m_txVector,
+                                                                        m_low->GetPhy ()->GetFrequency (),
+                                                                        trigger.begin ()->GetAid12 ());
+              if (maxDuration < minDuration)
+                {
+                  // maxDuration is a too short time. Reset m_staInfo and return DL_OFDMA.
+                  // In this way, no transmission will occur now and the next time we will try again
+                  // performing an UL OFDMA transmission.
+                  NS_LOG_DEBUG ("Available time " << maxDuration << " is too short");
+                  m_staInfo.clear ();
+                  return DL_OFDMA;
+                }
+            }
+
+          // maxDuration is the time to grant to the stations. Store it in the TX vector
+          NS_LOG_DEBUG ("HE TB PPDU duration: " << maxDuration.ToDouble (Time::MS));
+          uint16_t length = WifiPhy::ConvertHeTbPpduDurationToLSigLength (maxDuration,
+                                                                          m_low->GetPhy ()->GetFrequency ());
+          m_txVector.SetLength (length);
+          m_txParams = params;
+          return UL_OFDMA;
+        }
+    }
 
   // get the list of associated stations ((AID, MAC address) pairs)
   const std::map<uint16_t, Mac48Address>& staList = m_apMac->GetStaList ();
@@ -353,7 +515,6 @@ RrOfdmaManager::ComputeDlOfdmaInfo (void)
 
   // set TX vector and TX params
   InitTxVectorAndParams (dlOfdmaInfo.staInfo, ruType, m_dlMuAckSequence);
-  dlOfdmaInfo.txVector = m_txVector;
   dlOfdmaInfo.params = m_txParams;
 
   // assign RUs to stations
@@ -362,7 +523,7 @@ RrOfdmaManager::ComputeDlOfdmaInfo (void)
     {
       HeRu::RuSpec ru = {true, ruType, 1};
       NS_LOG_DEBUG ("STA " << m_staInfo.front ().first << " assigned " << ru);
-      dlOfdmaInfo.txVector.SetRu (ru, m_staInfo.front ().second.aid);
+      m_txVector.SetRu (ru, m_staInfo.front ().second.aid);
     }
   else
     {
@@ -383,11 +544,12 @@ RrOfdmaManager::ComputeDlOfdmaInfo (void)
               NS_ASSERT (mapIt != dlOfdmaInfo.staInfo.end ());
               HeRu::RuSpec ru = {primary80MHz, ruType, ruIndex};
               NS_LOG_DEBUG ("STA " << mapIt->first << " assigned " << ru);
-              dlOfdmaInfo.txVector.SetRu (ru, mapIt->second.aid);
+              m_txVector.SetRu (ru, mapIt->second.aid);
               mapIt++;
             }
         }
     }
+  dlOfdmaInfo.txVector = m_txVector;
 
   if (m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_MU_BAR
       || m_txParams.GetDlMuAckSequenceType () == DlMuAckSequenceType::DL_AGGREGATE_TF)
@@ -398,16 +560,7 @@ RrOfdmaManager::ComputeDlOfdmaInfo (void)
       // are sent at a rate not higher than MCS 5.
       dlOfdmaInfo.trigger = GetTriggerFrameHeader (dlOfdmaInfo.txVector, 5);
       dlOfdmaInfo.trigger.SetUlLength (m_low->CalculateUlLengthForBlockAcks (dlOfdmaInfo.trigger, m_txParams));
-      dlOfdmaInfo.trigger.SetApTxPower (static_cast<int8_t> (m_low->GetPhy ()->GetPowerDbm (stationManager->GetDefaultTxPowerLevel ())));
-      for (auto itInfo = dlOfdmaInfo.trigger.begin (); itInfo != dlOfdmaInfo.trigger.end (); ++itInfo)
-        {
-          const auto staList = m_apMac->GetStaList ();
-          auto itAidAddr = staList.find (itInfo->GetAid12 ());
-          NS_ASSERT (itAidAddr != staList.end ());
-          int8_t rssi = static_cast<int8_t> (stationManager->GetMostRecentRssi (itAidAddr->second));
-          rssi = (rssi >= -20) ? -20 : ((rssi <= -110) ? -110 : rssi); //cap so as to keep within [-110; -20] dBm
-          itInfo->SetUlTargetRssi (rssi);
-        }
+      SetTargetRssi (dlOfdmaInfo.trigger);
     }
 
   return dlOfdmaInfo;
@@ -432,7 +585,15 @@ RrOfdmaManager::GetTriggerFrameHeader (WifiTxVector dlMuTxVector, uint8_t maxMcs
 OfdmaManager::UlOfdmaInfo
 RrOfdmaManager::ComputeUlOfdmaInfo (void)
 {
-  NS_FATAL_ERROR ("This should never be called");
+  CtrlTriggerHeader trigger (TriggerFrameType::BASIC_TRIGGER, m_txVector);
+  trigger.SetUlLength (m_txVector.GetLength ());
+  SetTargetRssi (trigger);
+
+  UlOfdmaInfo ulOfdmaInfo;
+  ulOfdmaInfo.params = m_txParams;
+  ulOfdmaInfo.trigger = trigger;
+
+  return ulOfdmaInfo;
 }
 
 } //namespace ns3
