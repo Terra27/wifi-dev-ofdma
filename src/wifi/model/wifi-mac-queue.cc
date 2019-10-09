@@ -24,6 +24,7 @@
 #include "ns3/simulator.h"
 #include "wifi-mac-queue.h"
 #include "qos-blocked-destinations.h"
+#include <functional>
 
 namespace ns3 {
 
@@ -568,6 +569,90 @@ WifiMacQueue::GetNBytes (void)
         }
     }
   return QueueBase::GetNBytes ();
+}
+
+uint32_t
+WifiMacQueue::GetNPackets (uint8_t tid, Mac48Address dest) const
+{
+  WifiAddressTidPair addressTidPair (dest, tid);
+  auto it = m_nQueuedPackets.find (addressTidPair);
+  if (it == m_nQueuedPackets.end ())
+    {
+      return 0;
+    }
+  return m_nQueuedPackets.at (addressTidPair);
+}
+
+uint32_t
+WifiMacQueue::GetNBytes (uint8_t tid, Mac48Address dest) const
+{
+  WifiAddressTidPair addressTidPair (dest, tid);
+  auto it = m_nQueuedBytes.find (addressTidPair);
+  if (it == m_nQueuedBytes.end ())
+    {
+      return 0;
+    }
+  return m_nQueuedBytes.at (addressTidPair);
+}
+
+bool
+WifiMacQueue::DoEnqueue (ConstIterator pos, Ptr<WifiMacQueueItem> item)
+{
+  if (Queue<WifiMacQueueItem>::DoEnqueue (pos, item))
+    {
+      if (item->GetHeader ().IsQosData ())
+        {
+          WifiAddressTidPair addressTidPair (item->GetHeader ().GetAddr1 (), item->GetHeader ().GetQosTid ());
+          auto it = m_nQueuedPackets.find (addressTidPair);
+          if (it == m_nQueuedPackets.end ())
+            {
+              m_nQueuedPackets[addressTidPair] = 0;
+              m_nQueuedBytes[addressTidPair] = 0;
+            }
+          m_nQueuedPackets[addressTidPair]++;
+          m_nQueuedBytes[addressTidPair] += item->GetSize ();
+        }
+      return true;
+    }
+  return false;
+}
+
+Ptr<WifiMacQueueItem>
+WifiMacQueue::DoDequeue (ConstIterator pos)
+{
+  Ptr<WifiMacQueueItem> item = Queue<WifiMacQueueItem>::DoDequeue (pos);
+
+  if (item != 0 && item->GetHeader ().IsQosData ())
+    {
+      WifiAddressTidPair addressTidPair (item->GetHeader ().GetAddr1 (), item->GetHeader ().GetQosTid ());
+      NS_ASSERT (m_nQueuedPackets.find (addressTidPair) != m_nQueuedPackets.end ());
+      NS_ASSERT (m_nQueuedPackets[addressTidPair] >= 1);
+      NS_ASSERT (m_nQueuedBytes[addressTidPair] >= item->GetSize ());
+
+      m_nQueuedPackets[addressTidPair]--;
+      m_nQueuedBytes[addressTidPair] -= item->GetSize ();
+    }
+
+  return item;
+}
+
+Ptr<WifiMacQueueItem>
+WifiMacQueue::DoRemove (ConstIterator pos)
+{
+  Ptr<WifiMacQueueItem> item = Queue<WifiMacQueueItem>::DoRemove (pos);
+
+  if (item != 0 && item->GetHeader ().IsQosData ())
+    {
+      WifiAddressTidPair addressTidPair (item->GetHeader ().GetAddr1 (), item->GetHeader ().GetQosTid ());
+      NS_ASSERT (m_nQueuedPackets.find (addressTidPair) != m_nQueuedPackets.end ());
+      NS_ASSERT (m_nQueuedPackets[addressTidPair] >= 1);
+      NS_ASSERT (m_nQueuedBytes[addressTidPair] >= item->GetSize ());
+
+      m_nQueuedPackets[addressTidPair]--;
+      m_nQueuedBytes[addressTidPair] -= item->GetSize ();
+    }
+
+  return item;
 }
 
 } //namespace ns3
