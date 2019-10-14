@@ -610,7 +610,7 @@ MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
   m_currentPacket.clear ();
   m_currentPacket[staId] = Create<WifiPsdu> (mpdu, smpdu);
 
-  if (hdr.IsQosData () && !hdr.GetAddr1 ().IsBroadcast ()
+  if (hdr.IsQosData () && !hdr.GetAddr1 ().IsBroadcast () && hdr.HasData ()
       && !hdr.IsMoreFragments () && hdr.GetFragmentNumber () == 0)
     {
       m_currentPacket.clear ();
@@ -1387,32 +1387,47 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
             }
         }
 
-      if (mpdu != 0)
+      WifiTxVector heTbTxVector = trigger.GetHeTbTxVector (GetStaId (m_self));
+
+      // For HE TB PPDUs, just indicate that a Block Ack is expected, without
+      // the need of correctly specifying the Block Ack type. In fact, the response
+      // time (which is also stored in the Duration/ID field) is derived from
+      // the Duration/ID value carried by the Trigger Frame
+      MacLowTransmissionParameters params;
+      params.EnableBlockAck ({BlockAckType::MULTI_STA});
+
+      Time ppduDuration = WifiPhy::ConvertLSigLengthToHeTbPpduDuration (trigger.GetUlLength (),
+                                                                        heTbTxVector,
+                                                                        m_phy->GetFrequency ());
+      if (mpdu == 0 || !IsWithinSizeAndTimeLimits (mpdu, heTbTxVector, 0, ppduDuration))
         {
-          WifiTxVector heTbTxVector = trigger.GetHeTbTxVector (GetStaId (m_self));
-
-          // For HE TB PPDUs, just indicate that a Block Ack is expected, without
-          // the need of correctly specifying the Block Ack type. In fact, the response
-          // time (which is also stored in the Duration/ID field) is derived from
-          // the Duration/ID value carried by the Trigger Frame
-          MacLowTransmissionParameters params;
-          params.EnableBlockAck ({BlockAckType::MULTI_STA});
-
-          Time ppduDuration = WifiPhy::ConvertLSigLengthToHeTbPpduDuration (trigger.GetUlLength (),
-                                                                            heTbTxVector,
-                                                                            m_phy->GetFrequency ());
-          // schedule transmission of HE TB PPDU
-          void (MacLow::*fp) (Ptr<WifiMacQueueItem>, MacLowTransmissionParameters,
-                              Ptr<Txop>, WifiTxVector, Time, Time) = &MacLow::StartTransmission;
-
-          Simulator::Schedule (GetSifs (), fp, this, Copy (mpdu), params,
-                               GetEdca (mpdu->GetHeader ().GetQosTid ()), heTbTxVector, ppduDuration,
-                               hdr.GetDuration () - GetSifs () - ppduDuration);
+          // the selected MPDU, if any, does not fit within the time assigned by the AP.
+          NS_LOG_DEBUG ("Send a QoS Null frame");
+          WifiMacHeader header;
+          header.SetType (WIFI_MAC_QOSDATA_NULL);
+          header.SetAddr1 (hdr.GetAddr2 ());
+          header.SetAddr2 (GetAddress ());
+          header.SetAddr3 (hdr.GetAddr2 ());
+          header.SetDsTo ();
+          header.SetDsNotFrom ();
+          header.SetNoRetry ();
+          header.SetNoMoreFragments ();
+          // TR3: Sequence numbers for transmitted QoS (+)Null frames may be set
+          // to any value. (Table 10-3 of 802.11-2016)
+          header.SetSequenceNumber (0);
+          header.SetQosTid (mpdu != 0 ? mpdu->GetHeader ().GetQosTid () : 0);
+          header.SetQosAckPolicy (WifiMacHeader::NO_ACK);
+          mpdu = Create<const WifiMacQueueItem> (Create<Packet> (), header);
+          params.DisableAck ();
         }
-      else
-        {
-          NS_LOG_DEBUG ("No frame to send to the AP");
-        }
+
+      // schedule transmission of HE TB PPDU
+      void (MacLow::*fp) (Ptr<WifiMacQueueItem>, MacLowTransmissionParameters,
+                          Ptr<Txop>, WifiTxVector, Time, Time) = &MacLow::StartTransmission;
+
+      Simulator::Schedule (GetSifs (), fp, this, Copy (mpdu), params,
+                            GetEdca (mpdu->GetHeader ().GetQosTid ()), heTbTxVector, ppduDuration,
+                            hdr.GetDuration () - GetSifs () - ppduDuration);
     }
   else if (hdr.IsCtl ())
     {
@@ -1456,6 +1471,11 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
               txop->MissedAck ();
               m_cfAckInfo.expectCfAck = false;
             }
+        }
+      if (hdr.IsQosData () && !hdr.HasData ())
+        {
+          // QoS Null frame
+          return;
         }
       uint16_t staId = GetStaId (txVector.GetPreambleType () != WIFI_PREAMBLE_HE_TB ? m_self : hdr.GetAddr2 ());
       m_stationManager->ReportRxOk (hdr.GetAddr2 (), &hdr,
@@ -2431,7 +2451,7 @@ MacLow::ForwardDown (WifiPsduMap psduMap, WifiTxVector txVector)
     {
       for (auto& mpdu : *PeekPointer (psdu.second))
         {
-          if (mpdu->GetHeader ().IsQosData ())
+          if (mpdu->GetHeader ().IsQosData () && mpdu->GetHeader ().HasData ())
             {
               GetEdca (mpdu->GetHeader ().GetQosTid ())->CompleteMpduTx (mpdu);
             }
