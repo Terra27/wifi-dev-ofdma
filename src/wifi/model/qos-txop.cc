@@ -149,6 +149,12 @@ QosTxop::GetBaStartingSequence (Mac48Address address, uint8_t tid) const
   return m_baManager->GetOriginatorStartingSequence (address, tid);
 }
 
+void
+QosTxop::RetransmitOutstandingMpdus (Mac48Address recipient, uint8_t tid)
+{
+  m_baManager->NotifyMissedBlockAck (recipient, tid);
+}
+
 Ptr<const WifiMacQueueItem>
 QosTxop::PrepareBlockAckRequest (Mac48Address recipient, uint8_t tid) const
 {
@@ -1098,6 +1104,18 @@ QosTxop::MissedBlockAck (std::map <uint16_t, Ptr<WifiPsdu>> psduMap, const MacLo
           resetCw = true;
         }
     }
+
+  m_currentMpdu = 0;
+  if (!params.HasDlMuAckSequence () && psduMap.size () == 1 && psduMap.begin ()->first != SU_STA_ID)
+    {
+      // This is a PSDU sent in an HE TB PPDU. An HE STA resumes the EDCA backoff procedure
+      // without modifying CW or the backoff counter for the associated EDCAF, after
+      // transmission of an MPDU in an HE TB PPDU regardless of whether the STA has received
+      // the corresponding acknowledgment frame in response to the MPDU sent in the HE TB PPDU
+      // (Sec. 10.22.2.2 of 11ax Draft 3.0)
+      return;
+    }
+
   if (resetCw)
     {
       ResetCw ();
@@ -1106,7 +1124,7 @@ QosTxop::MissedBlockAck (std::map <uint16_t, Ptr<WifiPsdu>> psduMap, const MacLo
     {
       UpdateFailedCw ();
     }
-  m_currentMpdu = 0;
+
   // start next packet if transmission succeeded and TXOP remains
   if (txSuccess && GetTxopLimit ().IsStrictlyPositive () && GetTxopRemaining () > m_low->GetSifs ())
     {
@@ -1282,10 +1300,11 @@ void
 QosTxop::TerminateTxop (void)
 {
   NS_LOG_FUNCTION (this);
-  if (GetTxopLimit ().IsStrictlyPositive ())
+  if (m_startTxop.IsStrictlyPositive () && GetTxopLimit ().IsStrictlyPositive ())
     {
       NS_LOG_DEBUG ("Terminating TXOP. Duration = " << Simulator::Now () - m_startTxop);
       m_txopTrace (m_startTxop, Simulator::Now () - m_startTxop);
+      m_startTxop = Seconds (0);
     }
   m_cwTrace = GetCw ();
   m_backoff = m_rng->GetInteger (0, GetCw ());
@@ -1618,7 +1637,33 @@ QosTxop::GotBlockAck (const CtrlBAckResponseHeader *blockAck, Mac48Address recip
 {
   NS_LOG_FUNCTION (this << blockAck << recipient << rxSnr << txMode.GetUniqueName () << dataSnr);
   NS_LOG_DEBUG ("got block ack from=" << recipient);
-  m_baManager->NotifyGotBlockAck (blockAck, recipient, rxSnr, txMode, dataSnr);
+
+  if (blockAck->IsMultiSta ())
+    {
+      uint16_t aid = m_low->GetStaId (m_low->GetAddress ());
+      for (auto& index : blockAck->FindPerAidTidInfoWithAid (aid))
+        {
+          uint8_t tid = blockAck->GetTidInfo (index);
+
+          if (blockAck->GetAckType (index))
+            {
+              // Acknowledgment context
+              NS_ASSERT (m_currentMpdu != 0 && m_currentMpdu->GetHeader ().IsQosData ()
+                         && m_currentMpdu->GetHeader ().GetQosTid () == tid);
+              GetBaManager (tid)->NotifyGotAck (m_currentMpdu);
+            }
+          else
+            {
+              // Block Acknowledgment context
+              GetBaManager (tid)->NotifyGotBlockAck (blockAck, recipient, rxSnr, txMode, dataSnr, index);
+            }
+        }
+    }
+  else
+    {
+      uint8_t tid = blockAck->GetTidInfo ();
+      GetBaManager (tid)->NotifyGotBlockAck (blockAck, recipient, rxSnr, txMode, dataSnr);
+    }
   m_currentMpdu = 0;
   ResetCw ();
 }

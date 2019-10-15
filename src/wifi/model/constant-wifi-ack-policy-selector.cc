@@ -177,6 +177,17 @@ ConstantWifiAckPolicySelector::UpdateTxParams (std::map <uint16_t, Ptr<WifiPsdu>
 {
   NS_LOG_FUNCTION (this << params);
 
+  if (!params.HasDlMuAckSequence () && psduMap.size () == 1 && psduMap.begin ()->first != SU_STA_ID)
+    {
+      // this is a PSDU sent in an HE TB PPDU
+      if (!IsResponseNeeded (psduMap.begin ()->second, params))
+        {
+          NS_LOG_DEBUG ("A response is not needed: no ack for now, use Block Ack policy");
+          params.DisableAck ();
+        }
+      return;
+    }
+
   // If this is a single user transmission, return the params as updated by the
   // UpdateTxParams variant for SU PPDUs. If this is a DL MU PPDU not requiring
   // acknowledgment (only possible if this method is called twice), we do nothing.

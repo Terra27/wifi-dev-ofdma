@@ -75,7 +75,7 @@ WifiAckPolicySelector::SetAckPolicy (std::map <uint16_t, Ptr<WifiPsdu>> psduMap,
       NS_ASSERT (tids.size () == 1);
       uint8_t tid = *tids.begin ();
 
-      /* SU PPDU or DL MU PPDU not requiring acknowledgment */
+      /* SU PPDU or DL MU PPDU/HE TB PPDU not requiring acknowledgment */
       if (!params.HasDlMuAckSequence () && !params.HasUlMuAckSequence ())
         {
           if (params.MustWaitNormalAck () || params.MustWaitBlockAck ())

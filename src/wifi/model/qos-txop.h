@@ -226,6 +226,15 @@ public:
    * Block Ack Request.
    */
   void ScheduleBar (Ptr<const WifiMacQueueItem> bar);
+  /**
+   * \param recipient Address of recipient.
+   * \param tid Traffic ID.
+   *
+   * Move the outstanding MPDUs for the Block Ack agreement (if any) with the
+   * given recipient and the given TID to the retransmission queue. Also, remove
+   * any pending Block Ack Request for the same Block Ack agreement.
+   */
+  void RetransmitOutstandingMpdus (Mac48Address recipient, uint8_t tid);
 
   /* dcf notifications forwarded here */
   /**
