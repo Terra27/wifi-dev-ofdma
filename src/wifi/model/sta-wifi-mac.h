@@ -157,6 +157,20 @@ public:
    */
   uint16_t GetAssociationId (void) const;
 
+  /**
+   * Enable or disable reporting buffer status through the Queue Size subfield
+   * of all the QoS Data and QoS Null frames sent.
+   *
+   * \param enable enable or disable buffer status report
+   */
+  void SetReportBufferStatus (bool enable);
+  /**
+   * Return whether buffer status report is enabled.
+   *
+   * \return true if buffer status report is enabled, false otherwise
+   */
+  bool GetReportBufferStatus (void) const;
+
 private:
   /**
    * The current MAC state of the STA.
@@ -327,6 +341,7 @@ private:
   Time m_beaconWatchdogEnd;    ///< beacon watchdog end
   uint32_t m_maxMissedBeacons; ///< maximum missed beacons
   bool m_activeProbing;        ///< active probing
+  bool m_reportBufferStatus;   ///< report buffer status
   std::vector<ApInfo> m_candidateAps; ///< list of candidate APs to associate
   // Note: std::multiset<ApInfo> might be a candidate container to implement
   // this sorted list, but we are using a std::vector because we want to sort

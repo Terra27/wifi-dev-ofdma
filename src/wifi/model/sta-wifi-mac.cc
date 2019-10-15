@@ -72,6 +72,11 @@ StaWifiMac::GetTypeId (void)
                    BooleanValue (false),
                    MakeBooleanAccessor (&StaWifiMac::SetActiveProbing, &StaWifiMac::GetActiveProbing),
                    MakeBooleanChecker ())
+    .AddAttribute ("ReportQueueSize",
+                   "If true, the station reports the buffer status in all the QoS Data and QoS Null frames it sends.",
+                   BooleanValue (false),
+                   MakeBooleanAccessor (&StaWifiMac::m_reportBufferStatus),
+                   MakeBooleanChecker ())
     .AddTraceSource ("Assoc", "Associated with an access point.",
                      MakeTraceSourceAccessor (&StaWifiMac::m_assocLogger),
                      "ns3::Mac48Address::TracedCallback")
@@ -136,6 +141,18 @@ bool
 StaWifiMac::GetActiveProbing (void) const
 {
   return m_activeProbing;
+}
+
+void
+StaWifiMac::SetReportBufferStatus (bool enable)
+{
+  m_reportBufferStatus = enable;
+}
+
+bool
+StaWifiMac::GetReportBufferStatus (void) const
+{
+  return m_reportBufferStatus;
 }
 
 void

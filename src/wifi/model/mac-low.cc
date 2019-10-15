@@ -846,10 +846,40 @@ MacLow::StartTransmission (Ptr<WifiMacQueueItem> mpdu,
       return;
     }
 
+  Ptr<StaWifiMac> staMac = DynamicCast<StaWifiMac> (m_mac);
   for (auto& psdu : m_currentPacket)
     {
       NS_LOG_DEBUG ("startTx size=" << psdu.second->GetSize () << ", to="
                     << psdu.second->GetAddr1 () << ", txop=" << m_currentTxop);
+
+      if (staMac != 0)
+        {
+          // fill in the Queue Size subfield of every QoS Data frame
+          for (auto& mpdu : *PeekPointer (psdu.second))
+            {
+              if (mpdu->GetHeader ().IsQosData ())
+                {
+                  if (staMac->GetReportBufferStatus ())
+                    {
+                      // The queue size value is the total size, rounded up to the nearest
+                      // multiple of 256 octets and expressed in units of 256 octets, of all
+                      // MSDUs and A-MSDUs buffered at the STA (excluding the MSDU or A-MSDU
+                      // of the present QoS Data frame). See Sec. 9.2.4.5.6 of 802.11-2016
+                      uint8_t tid = mpdu->GetHeader ().GetQosTid ();
+                      uint32_t bufferSize = GetEdca (tid)->GetBufferSize (mpdu->GetHeader ().GetAddr1 (), tid);
+                      // A queue size value of 254 is used for all sizes greater than 64 768 octets.
+                      uint8_t queueSize = static_cast<uint8_t> (std::ceil (std::min (bufferSize, 64769u) / 256.0));
+                      NS_LOG_DEBUG ("Buffer size=" << bufferSize << " Queue Size=" << +queueSize);
+                      mpdu->GetHeader ().SetQosQueueSize (queueSize);
+                    }
+                  else
+                    {
+                      // A queue size value of 255 is used to indicate an unspecified or unknown size.
+                      mpdu->GetHeader ().SetQosQueueSize (255);
+                    }
+                }
+            }
+        }
     }
 
   // Set the Duration/ID field for HE TB PPDUs

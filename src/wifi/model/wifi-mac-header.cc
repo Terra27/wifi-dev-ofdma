@@ -385,6 +385,12 @@ void WifiMacHeader::SetQosTxopLimit (uint8_t txop)
   m_qosStuff = txop;
 }
 
+void
+WifiMacHeader::SetQosQueueSize (uint8_t size)
+{
+  m_qosStuff = size;
+}
+
 void WifiMacHeader::SetQosMeshControlPresent (void)
 {
   //Mark bit 0 of this variable instead of bit 8, since m_qosStuff is
@@ -843,6 +849,12 @@ WifiMacHeader::GetQosTid (void) const
 {
   NS_ASSERT (IsQosData ());
   return m_qosTid;
+}
+
+uint8_t
+WifiMacHeader::GetQosQueueSize (void) const
+{
+    return m_qosStuff;
 }
 
 uint16_t

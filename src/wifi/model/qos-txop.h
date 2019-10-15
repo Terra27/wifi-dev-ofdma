@@ -542,6 +542,15 @@ public:
    */
   Mac48Address MapDestAddressForAggregation (const WifiMacHeader &hdr);
 
+  /**
+   * \param address recipient address of the peer station
+   * \param tid traffic ID.
+   *
+   * \return the amount of buffered traffic for the given station and the given TID
+   *
+   * Get the amount of buffered traffic for the given station and the given TID.
+   */
+  uint32_t GetBufferSize (Mac48Address address, uint8_t tid) const;
 
   /**
    * Returns the next Block Ack Request to send, if any. If the given recipient is

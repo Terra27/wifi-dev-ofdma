@@ -572,6 +572,13 @@ QosTxop::GetBar (bool remove, uint8_t tid, Mac48Address address)
   return m_baManager->GetBar (remove, tid, address);
 }
 
+uint32_t
+QosTxop::GetBufferSize (Mac48Address address, uint8_t tid) const
+{
+  return m_queue->GetNBytes (tid, address) +
+         m_baManager->GetRetransmitQueue ()->GetNBytes (tid, address);
+}
+
 void
 QosTxop::NotifyAccessGranted (void)
 {
