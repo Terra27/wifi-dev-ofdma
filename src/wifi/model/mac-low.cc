@@ -1535,6 +1535,17 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
               m_cfAckInfo.expectCfAck = false;
             }
         }
+      if (hdr.IsQosData ())
+        {
+          Ptr<ApWifiMac> apMac = DynamicCast<ApWifiMac> (m_mac);
+          if (apMac != 0)
+            {
+              // Store Queue Size value of received QoS frame
+              NS_LOG_DEBUG ("Station " << hdr.GetAddr2 () << " reported a buffer status of "
+                                       << +hdr.GetQosQueueSize () << " for tid=" << +hdr.GetQosTid ());
+              apMac->SetBufferStatus (hdr.GetQosTid (), hdr.GetAddr2 (), hdr.GetQosQueueSize ());
+            }
+        }
       if (hdr.IsQosData () && !hdr.HasData ())
         {
           // QoS Null frame
