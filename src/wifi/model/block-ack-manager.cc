@@ -288,7 +288,7 @@ BlockAckManager::StorePacket (Ptr<WifiMacQueueItem> mpdu)
 }
 
 Ptr<const WifiMacQueueItem>
-BlockAckManager::GetBar (bool remove)
+BlockAckManager::GetBar (bool remove, uint8_t tid, Mac48Address address)
 {
   Ptr<const WifiMacQueueItem> bar;
   // remove all expired MPDUs in the retransmission queue, so that Block Ack Requests
@@ -299,9 +299,18 @@ BlockAckManager::GetBar (bool remove)
 
   while (nextBar != m_bars.end ())
     {
+      Mac48Address recipient = nextBar->bar->GetHeader ().GetAddr1 ();
+
+      if (address != Mac48Address::GetBroadcast () && tid != 8
+            && (!nextBar->bar->GetHeader ().IsBlockAckReq ()
+                  || address != recipient || tid != nextBar->tid))
+        {
+          // we can only return a BAR addressed to the given station and for the given TID
+          nextBar++;
+          continue;
+        }
       if (nextBar->bar->GetHeader ().IsBlockAckReq ())
         {
-          Mac48Address recipient = nextBar->bar->GetHeader ().GetAddr1 ();
           AgreementsI it = m_agreements.find (std::make_pair (recipient, nextBar->tid));
           if (it == m_agreements.end ())
             {

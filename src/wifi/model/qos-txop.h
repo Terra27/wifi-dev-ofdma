@@ -543,6 +543,20 @@ public:
   Mac48Address MapDestAddressForAggregation (const WifiMacHeader &hdr);
 
 
+  /**
+   * Returns the next Block Ack Request to send, if any. If the given recipient is
+   * not the broadcast address and the given TID is less than 8, then only return a
+   * Block Ack Request, if any, addressed to that recipient and for the given TID.
+   *
+   * \param remove true if the BAR has to be removed from the queue
+   * \param tid the TID
+   * \param recipient the recipient of the BAR
+   *
+   * \return the next BAR to be sent, if any
+   */
+  Ptr<const WifiMacQueueItem> GetBar (bool remove = true, uint8_t tid = 8,
+                                      Mac48Address recipient = Mac48Address::GetBroadcast ());
+
 private:
   /// allow AggregationCapableTransmissionListener class access
   friend class AggregationCapableTransmissionListener;

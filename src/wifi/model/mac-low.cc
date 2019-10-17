@@ -1280,7 +1280,7 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
                    || (hdr.GetAddr1 ().IsBroadcast ()
                        && trigger.FindUserInfoWithAid (GetStaId (m_self)) != trigger.end ()))))
     {
-      uint16_t staId = GetStaId (m_self);
+      uint16_t staId = GetStaId (hdr.GetAddr2 ());  // the BAR may be included in an HE TB PPDU
       m_stationManager->ReportRxOk (hdr.GetAddr2 (), &hdr,
                                                   rxSignalInfo, txVector.GetMode (staId));
 
@@ -1289,7 +1289,7 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
       if (hdr.IsBlockAckReq ())
         {
           packet->RemoveHeader (blockAckReq);
-          blockAckTxVector = GetBlockAckTxVector (hdr.GetAddr2 (), txVector.GetMode ());
+          blockAckTxVector = GetBlockAckTxVector (hdr.GetAddr2 (), txVector.GetMode (staId));
         }
       else
         {
@@ -1310,13 +1310,17 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
               NS_ASSERT (i != m_bAckCaches.end ());
               (*i).second.UpdateWithBlockAckReq (blockAckReq.GetStartingSequence ());
 
-              //NS_ASSERT (m_sendAckEvent.IsExpired ());
-              m_sendAckEvent.Cancel ();
               /* See section 11.5.3 in IEEE 802.11 for mean of this timer */
               ResetBlockAckInactivityTimerIfNeeded (it->second.first);
-              if ((*it).second.first.IsImmediateBlockAck ())
+
+              if (!(*it).second.first.IsImmediateBlockAck ())
+                {
+                  NS_FATAL_ERROR ("Delayed block ack not supported.");
+                }
+              else if (txVector.GetPreambleType () != WIFI_PREAMBLE_HE_TB)
                 {
                   NS_LOG_DEBUG ("rx blockAckRequest/sendImmediateBlockAck from=" << hdr.GetAddr2 ());
+                  m_sendAckEvent.Cancel ();
                   m_sendAckEvent = Simulator::Schedule (GetSifs (),
                                                         &MacLow::SendBlockAckAfterBlockAckRequest, this,
                                                         blockAckReq,
@@ -1327,7 +1331,17 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
                 }
               else
                 {
-                  NS_FATAL_ERROR ("Delayed block ack not supported.");
+                  NS_LOG_DEBUG ("rx blockAckRequest within HE TB PPDU from=" << hdr.GetAddr2 ());
+                  // a call to SendMultiStaBlockAckAfterHeTbPpdu has been already
+                  // scheduled by DeaggregateAmpduAndReceive
+                  if (!QosUtilsIsOldPacket ((*it).second.first.GetStartingSequence (), blockAckReq.GetStartingSequence ()))
+                    {
+                      (*it).second.first.SetStartingSequence (blockAckReq.GetStartingSequence ());
+                      (*it).second.first.SetWinEnd (((*it).second.first.GetStartingSequence () + (*it).second.first.GetBufferSize () - 1) % 4096);
+                      RxCompleteBufferedPacketsWithSmallerSequence (blockAckReq.GetStartingSequenceControl (), hdr.GetAddr2 (), tid);
+                      RxCompleteBufferedPacketsUntilFirstLost (hdr.GetAddr2 (), tid);
+                      (*it).second.first.SetWinEnd (((*it).second.first.GetStartingSequence () + (*it).second.first.GetBufferSize () - 1) % 4096);
+                    }
                 }
             }
           else
@@ -1352,15 +1366,24 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
       Ptr<const WifiMacQueueItem> mpdu;
       const std::vector<std::pair<uint8_t, uint8_t>> tids = {{1, 2} /* BK */, {0, 3} /* BE */, {4, 5} /* VI */, {6, 7} /* VO */};
       uint8_t ac = static_cast<uint8_t> (preferredAc);
+      uint8_t tid;
       int8_t inc = 1;
       for (uint8_t i = 0; i < 4; i++)
         {
-          uint8_t tid = tids[ac].second;
+          tid = tids[ac].second;
           if (GetEdca (tid)->GetBaAgreementEstablished (hdr.GetAddr2 (), tid))
             {
               // if there are outstanding frames, move them to the retransmission queue
-              GetEdca (tid)->RetransmitOutstandingMpdus (hdr.GetAddr2 (), tid);
-              mpdu = GetEdca (tid)->PeekNextFrame (tid, hdr.GetAddr2 ());
+//               GetEdca (tid)->RetransmitOutstandingMpdus (hdr.GetAddr2 (), tid);
+              mpdu = GetEdca (tid)->GetBar (true, tid, hdr.GetAddr2 ());
+              if (mpdu == 0)
+                {
+                  mpdu = GetEdca (tid)->PeekNextFrame (tid, hdr.GetAddr2 ());
+                }
+              else
+              {
+                NS_LOG_DEBUG ("Sending a BAR within an HE TB PPDU");
+              }
             }
           if (mpdu != 0)
             {
@@ -1371,8 +1394,16 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
           if (GetEdca (tid)->GetBaAgreementEstablished (hdr.GetAddr2 (), tid))
             {
               // if there are outstanding frames, move them to the retransmission queue
-              GetEdca (tid)->RetransmitOutstandingMpdus (hdr.GetAddr2 (), tid);
-              mpdu = GetEdca (tid)->PeekNextFrame (tid, hdr.GetAddr2 ());
+//               GetEdca (tid)->RetransmitOutstandingMpdus (hdr.GetAddr2 (), tid);
+              mpdu = GetEdca (tid)->GetBar (true, tid, hdr.GetAddr2 ());
+              if (mpdu == 0)
+                {
+                  mpdu = GetEdca (tid)->PeekNextFrame (tid, hdr.GetAddr2 ());
+                }
+              else
+              {
+                NS_LOG_DEBUG ("Sending a BAR within an HE TB PPDU");
+              }
             }
           if (mpdu != 0)
             {
@@ -1399,7 +1430,9 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
       Time ppduDuration = WifiPhy::ConvertLSigLengthToHeTbPpduDuration (trigger.GetUlLength (),
                                                                         heTbTxVector,
                                                                         m_phy->GetFrequency ());
-      if (mpdu == 0 || !IsWithinSizeAndTimeLimits (mpdu, heTbTxVector, 0, ppduDuration))
+      if (mpdu == 0
+          || (mpdu->GetHeader ().IsQosData ()
+              && !IsWithinSizeAndTimeLimits (mpdu, heTbTxVector, 0, ppduDuration)))
         {
           // the selected MPDU, if any, does not fit within the time assigned by the AP.
           NS_LOG_DEBUG ("Send a QoS Null frame");
@@ -1415,7 +1448,7 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
           // TR3: Sequence numbers for transmitted QoS (+)Null frames may be set
           // to any value. (Table 10-3 of 802.11-2016)
           header.SetSequenceNumber (0);
-          header.SetQosTid (mpdu != 0 ? mpdu->GetHeader ().GetQosTid () : 0);
+          header.SetQosTid (mpdu != 0 ? tid : 0);
           header.SetQosAckPolicy (WifiMacHeader::NO_ACK);
           mpdu = Create<const WifiMacQueueItem> (Create<Packet> (), header);
           params.DisableAck ();
@@ -1426,7 +1459,7 @@ MacLow::ReceiveOk (Ptr<WifiMacQueueItem> mpdu, RxSignalInfo rxSignalInfo, WifiTx
                           Ptr<Txop>, WifiTxVector, Time, Time) = &MacLow::StartTransmission;
 
       Simulator::Schedule (GetSifs (), fp, this, Copy (mpdu), params,
-                            GetEdca (mpdu->GetHeader ().GetQosTid ()), heTbTxVector, ppduDuration,
+                            GetEdca (tid), heTbTxVector, ppduDuration,
                             hdr.GetDuration () - GetSifs () - ppduDuration);
     }
   else if (hdr.IsCtl ())
@@ -3723,9 +3756,10 @@ MacLow::DeaggregateAmpduAndReceive (Ptr<WifiPsdu> psdu, RxSignalInfo rxSignalInf
               NS_ABORT_MSG_IF (firsthdr.GetAddr1 () != m_self, "All MPDUs of A-MPDU should have the same destination address");
               if (*status) //PER and thus CRC check succeeded
                 {
-                  if (txVector.GetPreambleType () == WIFI_PREAMBLE_HE_TB && firsthdr.IsQosData ())
+                  if (txVector.GetPreambleType () == WIFI_PREAMBLE_HE_TB
+                      && (firsthdr.IsQosData () || firsthdr.IsBlockAckReq ()))
                     {
-                      // this is a QoS data frame sent in an HE TB PPDU as a response to a Trigger Frame
+                      // this is a QoS data frame or a Block Ack Request sent in an HE TB PPDU as a response to a Trigger Frame
                       NS_ASSERT (m_ofdmaManager != 0);
                       const CtrlTriggerHeader& trigger = m_ofdmaManager->GetUlOfdmaInfo ().trigger;
 
@@ -3744,7 +3778,8 @@ MacLow::DeaggregateAmpduAndReceive (Ptr<WifiPsdu> psdu, RxSignalInfo rxSignalInf
                               params.SetUlMuAckSequenceType (m_txParams.GetUlMuAckSequenceType ());
                               m_txParams = params;
                             }
-                          if (psdu->GetAckPolicyForTid (firsthdr.GetQosTid ()) == WifiMacHeader::NORMAL_ACK)
+                          if (firsthdr.IsBlockAckReq ()
+                              || psdu->GetAckPolicyForTid (firsthdr.GetQosTid ()) == WifiMacHeader::NORMAL_ACK)
                             {
                               // Normal Ack or Implicit Block Ack Request policy, we need to send a block ack
                               std::list<Mac48Address> staList = m_txParams.GetStationsReceiveBlockAckFrom ();
@@ -3773,7 +3808,18 @@ MacLow::DeaggregateAmpduAndReceive (Ptr<WifiPsdu> psdu, RxSignalInfo rxSignalInf
                                       m_txParams.EnableBlockAck (firsthdr.GetAddr2 (), BlockAckType::COMPRESSED);
                                     }
 
-                                  AgreementsI it = m_bAckAgreements.find (std::make_pair (firsthdr.GetAddr2 (), firsthdr.GetQosTid ()));
+                                  uint8_t tid;
+                                  if (firsthdr.IsQosData ())
+                                    {
+                                      tid = firsthdr.GetQosTid ();
+                                    }
+                                  else
+                                    {
+                                      CtrlBAckRequestHeader bar;
+                                      (*n)->GetPacket ()->PeekHeader (bar);
+                                      tid = bar.GetTidInfo ();
+                                    }
+                                  AgreementsI it = m_bAckAgreements.find (std::make_pair (firsthdr.GetAddr2 (), tid));
                                   NS_ASSERT (it != m_bAckAgreements.end ());
 
                                   if (m_txParams.GetUlMuAckSequenceType () == UlMuAckSequenceType::UL_MULTI_STA_BLOCK_ACK)

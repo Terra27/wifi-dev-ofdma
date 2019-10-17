@@ -566,6 +566,12 @@ QosTxop::UpdateCurrentPacket (Ptr<WifiMacQueueItem> mpdu)
   m_currentMpdu = mpdu;
 }
 
+Ptr<const WifiMacQueueItem>
+QosTxop::GetBar (bool remove, uint8_t tid, Mac48Address address)
+{
+  return m_baManager->GetBar (remove, tid, address);
+}
+
 void
 QosTxop::NotifyAccessGranted (void)
 {
