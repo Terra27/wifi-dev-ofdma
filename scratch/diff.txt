@@ -1,0 +1,281 @@
+39a40
+> #include "ns3/bulk-send-helper.h"
+46a48,54
+> #include "ns3/core-module.h"
+> #include "ns3/network-module.h"
+> #include "ns3/internet-module.h"
+> #include "ns3/point-to-point-module.h"
+> #include "ns3/applications-module.h"
+> #include "ns3/flow-monitor.h"
+> #include "ns3/flow-monitor-helper.h"
+53a62,65
+> #define NUM_BULK_SEND_CLIENTS 10
+> #define NUM_HTTP_CLIENT 10
+> #define NUM__CLIENTS 10
+> 
+55a68
+> 
+56a70,142
+> void
+> ServerConnectionEstablished (Ptr<const ThreeGppHttpServer>, Ptr<Socket>)
+> {
+>   // std::cout << "Client has established a connection to the server.\n";
+>   NS_LOG_INFO ("Client has established a connection to the server.");
+> }
+> 
+> void
+> MainObjectGenerated (uint32_t size)
+> {
+>   // std::cout << "Server generated a main object of " << size << " bytes.\n";
+>   NS_LOG_INFO ("Server generated a main object of " << size << " bytes.");
+> }
+> 
+> void
+> EmbeddedObjectGenerated (uint32_t size)
+> {
+>   // std::cout << "Server generated an embedded object of " << size << " bytes.\n";
+>   NS_LOG_INFO ("Server generated an embedded object of " << size << " bytes.");
+> }
+> 
+> void
+> ServerTx (Ptr<const Packet> packet)
+> {
+>   // std::cout << "Server sent a packet of " << packet->GetSize () << " bytes.\n";
+>   NS_LOG_INFO ("Server sent a packet of " << packet->GetSize () << " bytes.");
+> }
+> 
+> void
+> ClientRx (Ptr<const Packet> packet, const Address &address)
+> {
+>   // std::cout << "Client received a packet of " << packet->GetSize () << " bytes from " << address;
+>   NS_LOG_INFO ("Client received a packet of " << packet->GetSize () << " bytes from " << address);
+> }
+> 
+> void
+> ClientMainObjectReceived (Ptr<const ThreeGppHttpClient>, Ptr<const Packet> packet)
+> {
+>   Ptr<Packet> p = packet->Copy ();
+>   ThreeGppHttpHeader header;
+>   p->RemoveHeader (header);
+>   if (header.GetContentLength () == p->GetSize ()
+>       && header.GetContentType () == ThreeGppHttpHeader::MAIN_OBJECT)
+>     {
+>       // std::cout << "Client has successfully received a main object of " << p->GetSize () << " bytes.\n";
+>       NS_LOG_INFO ("Client has successfully received a main object of "
+>                    << p->GetSize () << " bytes.");
+>     }
+>   else
+>     {
+>       NS_LOG_INFO ("Client failed to parse a main object. ");
+>     }
+> }
+> 
+> void
+> ClientEmbeddedObjectReceived (Ptr<const ThreeGppHttpClient>, Ptr<const Packet> packet)
+> {
+>   Ptr<Packet> p = packet->Copy ();
+>   ThreeGppHttpHeader header;
+>   p->RemoveHeader (header);
+>   if (header.GetContentLength () == p->GetSize ()
+>       && header.GetContentType () == ThreeGppHttpHeader::EMBEDDED_OBJECT)
+>     {
+>       // std::cout << "Client has successfully received an embedded object of " << p->GetSize () << " bytes.\n";
+>       NS_LOG_INFO ("Client has successfully received an embedded object of "
+>                    << p->GetSize () << " bytes.");
+>     }
+>   else
+>     {
+>       NS_LOG_INFO ("Client failed to parse an embedded object. ");
+>     }
+> }
+> 
+100c186
+<   void StartClient (OnOffHelper client);
+---
+>   void StartClient (ThreeGppHttpClientHelper client);
+181a268
+>   Ipv4InterfaceContainer m_apInterface;
+295c382
+<   NS_LOG_FUNCTION (this);
+---
+>   // NS_LOG_FUNCTION (this);
+391c478
+<   NS_LOG_FUNCTION (this);
+---
+>   // NS_LOG_FUNCTION (this);
+503,504c590,591
+<   Ipv4InterfaceContainer ApInterface;
+<   ApInterface = address.Assign (m_apDevices);
+---
+> 
+>   m_apInterface = address.Assign (m_apDevices);
+518a606,640
+>   ThreeGppHttpServerHelper serverHelper (m_apInterface.GetAddress(0));
+> 
+>   ApplicationContainer serverApps = serverHelper.Install (m_apNodes);
+>   std::cout << "Server Installed on: " << m_apInterface.GetAddress(0) << "\n";
+>   Ptr<ThreeGppHttpServer> httpServer = serverApps.Get (0)->GetObject<ThreeGppHttpServer> ();
+> 
+>   // Example of connecting to the trace sources
+>   httpServer->TraceConnectWithoutContext ("ConnectionEstablished",
+>                                           MakeCallback (&ServerConnectionEstablished));
+>   httpServer->TraceConnectWithoutContext ("MainObject", MakeCallback (&MainObjectGenerated));
+>   httpServer->TraceConnectWithoutContext ("EmbeddedObject", MakeCallback (&EmbeddedObjectGenerated));
+>   httpServer->TraceConnectWithoutContext ("Tx", MakeCallback (&ServerTx));
+> 
+> 
+>   PointerValue varPtr1;
+>   httpServer->GetAttribute ("Variables", varPtr1);
+>   Ptr<ThreeGppHttpVariables> httpVariables1 = varPtr1.Get<ThreeGppHttpVariables> ();
+>   httpVariables1->SetMainObjectSizeMean (1024 * 100 * 10); // 100kB
+>   httpVariables1->SetMainObjectSizeStdDev (4); // 40kB
+> 
+> 
+>   ThreeGppHttpClientHelper client (m_apInterface.GetAddress(0));
+>   m_clientApps = client.Install(m_staNodes);
+>   m_clientApps.Stop (Seconds (m_warmup + m_simulationTime + 100));
+> 
+>   for (int i = 0; i < m_nStations; ++i)
+>   {
+>   	Ptr<ThreeGppHttpClient> httpClient = m_clientApps.Get (i)->GetObject<ThreeGppHttpClient> ();
+> 	  PointerValue varPtr;
+>   	httpClient->GetAttribute ("Variables", varPtr);
+>   	Ptr<ThreeGppHttpVariables> httpVariables = varPtr.Get<ThreeGppHttpVariables> ();
+>   	// httpVariables->SetRequestSize(1024);
+>   }
+> 
+> 
+544,545c666,668
+<   NS_LOG_FUNCTION (this);
+< 
+---
+>   // Ptr<FlowMonitor> flowMonitor;
+>   // FlowMonitorHelper flowHelper;
+>   // flowMonitor = flowHelper.InstallAll();
+550a674
+>   // flowMonitor->SerializeToXmlFile("NameOfFile.xml", true, true);
+551a676
+>   std::cout << "Simulation Complete\n";
+552a678,679
+>   double BSCtotalTput[10];
+>   for (int i = 0; i < 10; i++) BSCtotalTput[i] = 0.0;
+558c685,690
+<       tput = ((m_rxStop[i] - m_rxStart[i]) * 8.) / (m_simulationTime * 1e6);
+---
+>       if (i < 10) {
+>           tput = ((m_rxStop[i] - 0.0) * 8.) / (m_simulationTime * 1e6);
+>           BSCtotalTput[i] += tput;
+>       } else {
+>           tput = ((m_rxStop[i] - m_rxStart[i]) * 8.) / (m_simulationTime * 1e6);
+>       }
+561a694,697
+> 
+>   for (int i = 0; i < NUM_BULK_SEND_CLIENTS; i++) {
+>     std::cout << "BSC1: " << BSCtotalTput[i] << "\n";
+>   }
+699c835
+<   NS_LOG_FUNCTION (this << m_currentSta);
+---
+>   // NS_LOG_FUNCTION (this << m_currentSta);
+701,704c837,843
+< 
+<   Ptr<WifiNetDevice> dev = DynamicCast<WifiNetDevice> (m_staDevices.Get (m_currentSta));
+<   NS_ASSERT (dev != 0);
+<   dev->GetMac ()->SetSsid (m_ssid); // this will lead the station to associate with the AP
+---
+>   // for (int i = 0; i < m_nStations; ++i)
+>   // {
+> 	  std::cout << "Station no. " << m_currentSta << " is associated with the AP\n";
+> 	  Ptr<WifiNetDevice> dev = DynamicCast<WifiNetDevice> (m_staDevices.Get (m_currentSta));
+> 	  NS_ASSERT (dev != 0);
+> 	  dev->GetMac ()->SetSsid (m_ssid); // this will lead the station to associate with the AP
+>   // }
+710c849,850
+<   NS_LOG_FUNCTION (this << bssid << m_currentSta);
+---
+>   std::cout << "Establish BA Agreement for client " << m_currentSta << "\n";
+>   // NS_LOG_FUNCTION (this << bssid << m_currentSta);
+731,733c871,892
+<   uint16_t offInterval = 10;  // milliseconds
+<   std::stringstream ss;
+<   ss << "ns3::ConstantRandomVariable[Constant=" << std::fixed << static_cast<double> (offInterval / 1000.) << "]";
+---
+>   // uint16_t offInterval = 10;  // milliseconds
+> 
+>   // std::stringstream ss;
+>   // ss << "ns3::ConstantRandomVariable[Constant=" << std::fixed << static_cast<double> (offInterval / 1000.) << "]";
+> 
+>   // std::string socketType = (m_transport.compare ("Tcp") == 0 ? "ns3::TcpSocketFactory" : "ns3::UdpSocketFactory");
+> 
+>   // ThreeGppHttpClientHelper client (m_apInterface.GetAddress(0));
+>   // m_clientApps = client.Install(m_staNodes);
+>   // m_currentSta = m_nStations - 1;
+>   // m_clientApps.Stop (Seconds (m_warmup + m_simulationTime + 100));
+> 
+> 
+>   // m_clientApps.Add(client.Install(m_staNodes.Get(m_currentSta)));
+>   // m_clientApps.Stop (Seconds (m_warmup + m_simulationTime + 100));
+> 
+> 
+>   // uint64_t startTime = std::ceil (Simulator::Now ().ToDouble (Time::MS) / offInterval) * offInterval;
+> 
+>   // Simulator::Schedule (MilliSeconds (static_cast<uint64_t> (startTime) + 110) - Simulator::Now (),
+>   //                      &WifiDlOfdmaExample::StartClient, this, client);
+> 
+735,744d893
+<   std::string socketType = (m_transport.compare ("Tcp") == 0 ? "ns3::TcpSocketFactory" : "ns3::UdpSocketFactory");
+<   OnOffHelper client (socketType, Ipv4Address::GetAny ());
+<   client.SetAttribute ("OnTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
+<   client.SetAttribute ("OffTime", StringValue (ss.str ()));
+<   client.SetAttribute ("DataRate", DataRateValue (DataRate (m_dataRate * 1e6)));
+<   client.SetAttribute ("PacketSize", UintegerValue (m_payloadSize));
+< 
+<   InetSocketAddress dest (m_staInterfaces.GetAddress (m_currentSta), m_port);
+<   // dest.SetTos (0xb8); //AC_VI
+<   client.SetAttribute ("Remote", AddressValue (dest));
+752d900
+<   uint64_t startTime = std::ceil (Simulator::Now ().ToDouble (Time::MS) / offInterval) * offInterval;
+754,755d901
+<   Simulator::Schedule (MilliSeconds (static_cast<uint64_t> (startTime) + 110) - Simulator::Now (),
+<                        &WifiDlOfdmaExample::StartClient, this, client);
+764a911
+>       // Simulator::Schedule (pingDuration, &WifiDlOfdmaExample::StartStatistics, this);
+767a915
+> 
+769c917
+< WifiDlOfdmaExample::StartClient (OnOffHelper client)
+---
+> WifiDlOfdmaExample::StartClient (ThreeGppHttpClientHelper client)
+770a919
+>   std::cout << "Client started ...\n";
+772,774c921,922
+< 
+<   m_clientApps.Add (client.Install (m_apNodes));
+<   m_clientApps.Stop (Seconds (m_warmup + m_simulationTime + 100)); // let clients be active for a long time
+---
+>   m_clientApps.Add(client.Install(m_staNodes.Get(m_currentSta)));
+>   m_clientApps.Stop (Seconds (m_warmup + m_simulationTime + 100));
+779a928
+>   std::cout << "Traffic Started ...\n";
+782,788d930
+<   for (uint32_t i = 0; i < m_staNodes.GetN (); i++)
+<     {
+<       Ptr<Application> clientApp = m_clientApps.Get (i);
+<       clientApp->SetAttribute ("OnTime", StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
+<       clientApp->SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
+<     }
+< 
+795c937,938
+<   NS_LOG_FUNCTION (this);
+---
+>   std::cout << "*******************Start Statistics *****************\n";
+>   // NS_LOG_FUNCTION (this);
+816a960
+>       std::cout << m_rxStart[i] << "bytes received by sink application " << i << " before the end of the warmup period\n";
+837c981,982
+<   NS_LOG_FUNCTION (this);
+---
+>   std::cout << "*******************Stop Statistics *****************\n";
+>   // NS_LOG_FUNCTION (this);
+898a1044
+>   // std::cout << "**********************Notify ******************\n";

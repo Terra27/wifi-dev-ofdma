@@ -1,0 +1,51 @@
+1,13d0
+< /*
+<  * Understand the simulation script.
+<  * https://gitlab.com/stavallo/ns-3-dev/-/blob/wifi-experimental/src/wifi/examples/wifi-dl-ofdma.cc
+<  * Analyze downlink ofdma performance in dense scenarios with around 30 clients connected to one AP. Clients run different types of applications some real time flows like (skype audio/video call) some clients do browsing and some other clients do long download. Identify how many clients are put in one OFDMA transmission, what is the OFDMA frame transmission duration? Are there any SU (single user) transmissions or there are always multi user transmissions? Identify in what scenarios OFDMA provides performance benefit and in which scenarios it could not? Hint: look for different metrics i.e., throughput (for bulk send clients), rtt, delay, jitter (for on off clients), response time for HTTP browsing clients.
+< 
+<  * Submit a report on your observation with graphs on OFDMA frame transmission time, throughput (for bulk send clients), Delay, Jitter for OnOff clients, HTTP response time for HTTP clients.
+< 
+< ./waf --run "wifi-dl-ofdma --simulationTime=5 --mcs=11 --txopLimit=10016 --dlAckType=2 --channelWidth=20 --guardInterval=800 --transport=Udp --radius=1 --nStations=5"
+< 
+<  */
+< 
+< 
+< 
+52,54c39
+< 
+< #include "ns3/bulk-send-helper.h"
+< 
+---
+> #include "ns3/on-off-helper.h"
+115c100
+<   void StartClient (BulkSendHelper client);
+---
+>   void StartClient (OnOffHelper client);
+751,754c736,740
+<   
+<   BulkSendHelper client (socketType, Ipv4Address::GetAny ());
+<   client.SetAttribute ("SendSize", UintegerValue (m_payloadSize));
+<   client.SetAttribute ("MaxBytes", UintegerValue (0));
+---
+>   OnOffHelper client (socketType, Ipv4Address::GetAny ());
+>   client.SetAttribute ("OnTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
+>   client.SetAttribute ("OffTime", StringValue (ss.str ()));
+>   client.SetAttribute ("DataRate", DataRateValue (DataRate (m_dataRate * 1e6)));
+>   client.SetAttribute ("PacketSize", UintegerValue (m_payloadSize));
+756d741
+<   // dest.SetTos (0xb8); //AC_VI
+757a743
+>   // dest.SetTos (0xb8); //AC_VI
+783c769
+< WifiDlOfdmaExample::StartClient (BulkSendHelper client)
+---
+> WifiDlOfdmaExample::StartClient (OnOffHelper client)
+794a781,787
+> 
+>   for (uint32_t i = 0; i < m_staNodes.GetN (); i++)
+>     {
+>       Ptr<Application> clientApp = m_clientApps.Get (i);
+>       clientApp->SetAttribute ("OnTime", StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
+>       clientApp->SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
+>     }

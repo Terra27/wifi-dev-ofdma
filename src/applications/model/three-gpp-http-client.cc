@@ -47,6 +47,7 @@ NS_OBJECT_ENSURE_REGISTERED (ThreeGppHttpClient);
 ThreeGppHttpClient::ThreeGppHttpClient ()
   : m_state (NOT_STARTED),
   m_socket (0),
+  m_receivedBytes(0),
   m_objectBytesToBeReceived (0),
   m_objectClientTs (MilliSeconds (0)),
   m_objectServerTs (MilliSeconds (0)),
@@ -142,6 +143,11 @@ ThreeGppHttpClient::GetSocket () const
   return m_socket;
 }
 
+uint64_t 
+ThreeGppHttpClient::GetTotalRx()
+{
+  return m_receivedBytes;
+}
 
 ThreeGppHttpClient::State_t
 ThreeGppHttpClient::GetState () const
@@ -330,6 +336,7 @@ ThreeGppHttpClient::ReceivedDataCallback (Ptr<Socket> socket)
           break; // EOF
         }
 
+      m_receivedBytes = m_receivedBytes + packet->GetSize();
 #ifdef NS3_LOG_ENABLE
       // Some log messages.
       if (InetSocketAddress::IsMatchingType (from))

@@ -193,6 +193,7 @@ void BulkSendApplication::SendData (void)
         }
 
       NS_LOG_LOGIC ("sending packet at " << Simulator::Now ());
+      //std::cout << "sending packet at " << Seconds(Simulator::Now ()) << "\n";
       Ptr<Packet> packet = Create<Packet> (toSend);
       int actual = m_socket->Send (packet);
       if (actual > 0)
