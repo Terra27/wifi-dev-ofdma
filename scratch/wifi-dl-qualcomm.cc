@@ -359,7 +359,7 @@ WifiDlOfdmaExample::WifiDlOfdmaExample ()
     m_transport ("Tcp"),
     m_queueDisc ("default"),
     m_enablePcap (true),
-    m_warmup (5.0),
+    m_warmup (2.0),
     m_currentSta (0),
     m_ssid (Ssid ("network-A")),
     m_port (7000),
@@ -659,10 +659,10 @@ WifiDlOfdmaExample::Setup (void)
 
   if (m_enablePcap)
     {
-      AsciiTraceHelper ascii;
-      phy.EnableAscii(ascii.CreateFileStream("AP_ascii.tr"), m_apDevices);
+      //AsciiTraceHelper ascii;
+      //phy.EnableAscii(ascii.CreateFileStream("AP_ascii.tr"), m_apDevices);
       //phy.EnablePcap ("STA_pcap", m_staDevices);
-      phy.EnablePcap ("AP_pcap", m_apDevices);
+      //phy.EnablePcap ("AP_pcap", m_apDevices);
     }
 }
 
