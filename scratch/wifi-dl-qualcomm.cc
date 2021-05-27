@@ -359,7 +359,7 @@ WifiDlOfdmaExample::WifiDlOfdmaExample ()
     m_transport ("Tcp"),
     m_queueDisc ("default"),
     m_enablePcap (true),
-    m_warmup (1.0),
+    m_warmup (5.0),
     m_currentSta (0),
     m_ssid (Ssid ("network-A")),
     m_port (7000),
