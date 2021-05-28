@@ -886,9 +886,9 @@ WifiDlOfdmaExample::EstablishBaAgreement (Mac48Address bssid)
     client.SetAttribute ("OffTime", StringValue (ss.str ()));
 
     if ( m_currentSta >= 12 ) // Gaming
-      client.SetAttribute ("DataRate", DataRateValue (DataRate (1.5 * 1e6)));
+      client.SetAttribute ("DataRate", DataRateValue (DataRate (m_dataRate * 1e6)));
     else // Video Call + Security Camera
-      client.SetAttribute ("DataRate", DataRateValue (DataRate (3 * 1e6)));
+      client.SetAttribute ("DataRate", DataRateValue (DataRate (m_dataRate * 1e6)));
 
     client.SetAttribute ("PacketSize", UintegerValue (m_payloadSize));
 
@@ -910,7 +910,7 @@ WifiDlOfdmaExample::EstablishBaAgreement (Mac48Address bssid)
   if ( m_currentSta == 0 ) {
 
     ThreeGppHttpServerHelper server(m_apInterface.GetAddress(0));
-    Simulator::Schedule (Seconds(m_warmup), &WifiDlOfdmaExample::StartHttpServer, this, server);
+    Simulator::Schedule (Seconds(m_warmup + 0.5), &WifiDlOfdmaExample::StartHttpServer, this, server);
   }
 
   // continue with the next station, if any is remaining
