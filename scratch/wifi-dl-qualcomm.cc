@@ -193,7 +193,8 @@ public:
   /**
    * Start generating traffic.
    */
-  void StartTraffic (void);
+  //void StartTraffic (void);
+  void StartTraffic(ThreeGppHttpServerHelper server);
   /**
    * Start collecting statistics.
    */
@@ -886,9 +887,9 @@ WifiDlOfdmaExample::EstablishBaAgreement (Mac48Address bssid)
     client.SetAttribute ("OffTime", StringValue (ss.str ()));
 
     if ( m_currentSta >= 12 ) // Gaming
-      client.SetAttribute ("DataRate", DataRateValue (DataRate (m_dataRate * 1e6)));
+      client.SetAttribute ("DataRate", DataRateValue (DataRate (1.5 * 1e6)));
     else // Video Call + Security Camera
-      client.SetAttribute ("DataRate", DataRateValue (DataRate (m_dataRate * 1e6)));
+      client.SetAttribute ("DataRate", DataRateValue (DataRate (3 * 1e6)));
 
     client.SetAttribute ("PacketSize", UintegerValue (m_payloadSize));
 
@@ -909,8 +910,8 @@ WifiDlOfdmaExample::EstablishBaAgreement (Mac48Address bssid)
   }
   if ( m_currentSta == 0 ) {
 
-    ThreeGppHttpServerHelper server(m_apInterface.GetAddress(0));
-    Simulator::Schedule (Seconds(m_warmup + 0.5), &WifiDlOfdmaExample::StartHttpServer, this, server);
+    //ThreeGppHttpServerHelper server(m_apInterface.GetAddress(0));
+    //Simulator::Schedule (Seconds(m_warmup + 0.5), &WifiDlOfdmaExample::StartHttpServer, this, server);
   }
 
   // continue with the next station, if any is remaining
@@ -920,7 +921,8 @@ WifiDlOfdmaExample::EstablishBaAgreement (Mac48Address bssid)
     }
   else
     {
-      Simulator::Schedule (pingDuration, &WifiDlOfdmaExample::StartTraffic, this);
+      ThreeGppHttpServerHelper server(m_apInterface.GetAddress(0));
+      Simulator::Schedule (pingDuration, &WifiDlOfdmaExample::StartTraffic, this, server);
       // Simulator::Schedule (pingDuration, &WifiDlOfdmaExample::StartStatistics, this);
     }
 }
@@ -967,8 +969,27 @@ WifiDlOfdmaExample::StartBulkClient(BulkSendHelper client) {
 }
 
 void
-WifiDlOfdmaExample::StartTraffic (void)
+WifiDlOfdmaExample::StartTraffic (ThreeGppHttpServerHelper serverHelper)
 {
+  m_httpServerApp.Add(serverHelper.Install (m_apNodes));
+  m_httpServerApp.Stop (Seconds (m_warmup + m_simulationTime));
+  std::cout << "Server Installed on: " << m_apInterface.GetAddress(0) << "\n";
+  Ptr<ThreeGppHttpServer> httpServer = m_httpServerApp.Get (0)->GetObject<ThreeGppHttpServer> ();
+
+  // Example of connecting to the trace sources
+  httpServer->TraceConnectWithoutContext ("ConnectionEstablished",
+                                          MakeCallback (&ServerConnectionEstablished));
+  httpServer->TraceConnectWithoutContext ("MainObject", MakeCallback (&MainObjectGenerated));
+  httpServer->TraceConnectWithoutContext ("EmbeddedObject", MakeCallback (&EmbeddedObjectGenerated));
+  httpServer->TraceConnectWithoutContext ("Tx", MakeCallback (&ServerTx));
+
+
+  PointerValue varPtr1;
+  httpServer->GetAttribute ("Variables", varPtr1);
+  Ptr<ThreeGppHttpVariables> httpVariables1 = varPtr1.Get<ThreeGppHttpVariables> ();
+  httpVariables1->SetMainObjectSizeMean (1024 * 100 * 10); // 100kB
+  httpVariables1->SetMainObjectSizeStdDev (4); // 40kB
+
   std::cout << "Traffic Started ...\n";
   NS_LOG_FUNCTION (this);
 
