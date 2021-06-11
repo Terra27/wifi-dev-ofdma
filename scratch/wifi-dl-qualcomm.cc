@@ -672,6 +672,8 @@ WifiDlOfdmaExample::Run (void)
   // flowMonitor->SerializeToXmlFile("NameOfFile.xml", true, true);
 
   std::cout << "Simulation Complete\n";
+  std::cout << "MCS = " << m_mcs;
+  
   double totalTput = 0.0;
   double BSCtotalTput[10];
   for (int i = 0; i < 10; i++) BSCtotalTput[i] = 0.0;
