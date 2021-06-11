@@ -19,7 +19,7 @@
  *          Sébastien Deronne <sebastien.deronne@gmail.com>
  */
 
-// ./waf --run "wifi-dl-mix-traffic --simulationTime=10 --mcs=11 --dlAckType=2 --channelWidth=20 --guardInterval=800 --radius=1"
+// ./waf --run "wifi-dl-qualcomm-cir --simulationTime=10 --enablePcap=false --dlAckType=2 --channelWidth=20 --guardInterval=800 --radius=1"
 
 #include "ns3/command-line.h"
 #include "ns3/config.h"
@@ -60,6 +60,7 @@
 #include <iomanip>
 #include <sstream>
 #include <numeric>
+#include <time.h>
 
 #define NUM_BULK_SEND_CLIENTS 10
 #define NUM_HTTP_CLIENT 10
@@ -421,6 +422,9 @@ WifiDlOfdmaExample::Config (int argc, char *argv[])
   cmd.AddValue ("verbose", "Enable/disable all Wi-Fi debug traces", m_verbose);
   cmd.Parse (argc, argv);
 
+  srand(time(0));
+  m_mcs = 1 + ( std::rand () % 10 + 1 );
+
   uint64_t phyRate = WifiPhy::GetHeMcs (m_mcs).GetDataRate (m_channelWidth, m_guardInterval, 1);
   // Estimate the A-MPDU size as the number of bytes transmitted at the PHY rate in
   // an interval equal to the maximum PPDU duration
@@ -501,8 +505,8 @@ WifiDlOfdmaExample::Setup (void)
   m_apNodes.Create (1);
 
   Ptr<MultiModelSpectrumChannel> spectrumChannel = CreateObject<MultiModelSpectrumChannel> ();
-  Ptr<FriisPropagationLossModel> lossModel = CreateObject<FriisPropagationLossModel> ();
-  spectrumChannel->AddPropagationLossModel (lossModel);
+  //Ptr<FriisPropagationLossModel> lossModel = CreateObject<FriisPropagationLossModel> ();
+  //spectrumChannel->AddPropagationLossModel (lossModel);
   Ptr<ConstantSpeedPropagationDelayModel> delayModel = CreateObject<ConstantSpeedPropagationDelayModel> ();
   spectrumChannel->SetPropagationDelayModel (delayModel);
   SpectrumWifiPhyHelper phy = SpectrumWifiPhyHelper::Default ();
