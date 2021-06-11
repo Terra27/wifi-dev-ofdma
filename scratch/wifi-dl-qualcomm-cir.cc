@@ -336,7 +336,7 @@ private:
 WifiDlOfdmaExample::WifiDlOfdmaExample ()
   : m_payloadSize (1400),
     m_simulationTime (2),
-    m_nStations (6),
+    m_nStations (16),
     m_radius (10),
     m_enableDlOfdma (true),
     m_forceDlOfdma (true),
