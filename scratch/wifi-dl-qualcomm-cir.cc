@@ -336,7 +336,7 @@ private:
 WifiDlOfdmaExample::WifiDlOfdmaExample ()
   : m_payloadSize (1400),
     m_simulationTime (2),
-    m_nStations (16),
+    m_nStations (6),
     m_radius (10),
     m_enableDlOfdma (true),
     m_forceDlOfdma (true),
@@ -635,19 +635,10 @@ WifiDlOfdmaExample::Setup (void)
   Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (m_payloadSize));
 
   PacketSinkHelper packetSinkHelper (socketType, InetSocketAddress (Ipv4Address::GetAny (), m_port));
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(3))); // 1
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(4))); // 2
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(5))); // 3
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(6))); // 4
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(7))); // 5
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(8))); // 6
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(9))); // 7
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(10))); // 8
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(11))); // 9
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(12))); // 10
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(13))); // 11
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(14))); // 12
-  m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(15))); // 13
+  for (int i = 3; i < m_nStations; ++i)
+  {
+  	m_sinkApps.Add(packetSinkHelper.Install (m_staNodes.Get(i))); // i
+  }
 
   m_sinkApps.Stop (Seconds (m_warmup + m_simulationTime)); // let the server be active for a long time
 
@@ -998,7 +989,8 @@ WifiDlOfdmaExample::StartTraffic (ThreeGppHttpServerHelper serverHelper)
   NS_LOG_FUNCTION (this);
 
   // 
-  for (uint32_t i = 0; i < 13; i++)
+  uint32_t p = m_nStations - 3;
+  for (uint32_t i = 0; i < p; i++)
     {
       Ptr<Application> sourceApp = m_onOffSourceApps.Get (i);
       sourceApp->SetAttribute ("OnTime", StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
