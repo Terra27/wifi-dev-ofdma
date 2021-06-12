@@ -19,7 +19,7 @@
  *          Sébastien Deronne <sebastien.deronne@gmail.com>
  */
 
-// ./waf --run "wifi-dl-qualcomm-cir --simulationTime=10 --enablePcap=false --dlAckType=2 --channelWidth=20 --guardInterval=800 --radius=1"
+// ./waf --run "wifi-dl-qualcomm-cir --simulationTime=10 --nStations=5 --mcs=11 --enablePcap=false --dlAckType=2 --channelWidth=20 --guardInterval=800 --radius=1"
 
 #include "ns3/command-line.h"
 #include "ns3/config.h"
@@ -250,7 +250,7 @@ private:
   uint8_t m_channelNumber;
   uint16_t m_channelCenterFrequency;
   uint16_t m_guardInterval; // GI in nanoseconds
-  uint8_t m_maxNRus;        // max number of RUs per MU PPDU
+  uint32_t m_maxNRus;        // max number of RUs per MU PPDU
   uint32_t m_mcs;           // MCS value
   uint16_t m_maxAmsduSize;  // maximum A-MSDU size
   uint32_t m_maxAmpduSize;  // maximum A-MSDU size
@@ -423,7 +423,8 @@ WifiDlOfdmaExample::Config (int argc, char *argv[])
   cmd.Parse (argc, argv);
 
   srand(time(0));
-  m_mcs = 1 + ( std::rand () % 10 + 1 );
+  if ( m_mcs == 0 )
+    m_mcs = 1 + ( std::rand () % 10 + 1 );
 
   uint64_t phyRate = WifiPhy::GetHeMcs (m_mcs).GetDataRate (m_channelWidth, m_guardInterval, 1);
   // Estimate the A-MPDU size as the number of bytes transmitted at the PHY rate in
@@ -470,6 +471,7 @@ WifiDlOfdmaExample::Config (int argc, char *argv[])
 
   std::cout << "Channel bw = " << m_channelWidth << " MHz" << std::endl
             << "MCS = " << m_mcs << std::endl
+            << "maxRus = " << m_maxNRus << std::endl
             << "Number of stations = " << m_nStations << std::endl
             << "Data rate = " << m_dataRate << " Mbps" << std::endl
             << "EDCA queue max size = " << m_macQueueSize << " MSDUs" << std::endl
@@ -615,13 +617,14 @@ WifiDlOfdmaExample::Setup (void)
     }
 
   /* Transport and application layer */
-
+  
   ThreeGppHttpClientHelper client (m_apInterface.GetAddress(0));
   m_httpClientApps.Add(client.Install(m_staNodes.Get(0)));
   m_httpClientApps.Add(client.Install(m_staNodes.Get(1)));
   m_httpClientApps.Add(client.Install(m_staNodes.Get(2)));
   m_httpClientApps.Stop (Seconds (m_warmup + m_simulationTime));
 
+  /*
   for (int i = 0; i < 3; ++i)
   {
   	Ptr<ThreeGppHttpClient> httpClient = m_httpClientApps.Get (i)->GetObject<ThreeGppHttpClient> ();
@@ -630,6 +633,7 @@ WifiDlOfdmaExample::Setup (void)
     httpClient->TraceConnectWithoutContext ("RxEmbeddedObject", MakeCallback (&ClientEmbeddedObjectReceived));
     httpClient->TraceConnectWithoutContext ("Rx", MakeCallback (&ClientRx));
   }
+  */
 
   std::string socketType = (m_transport.compare ("Tcp") == 0 ? "ns3::TcpSocketFactory" : "ns3::UdpSocketFactory");
   Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (m_payloadSize));
@@ -676,7 +680,8 @@ WifiDlOfdmaExample::Run (void)
   // flowMonitor->SerializeToXmlFile("NameOfFile.xml", true, true);
 
   std::cout << "Simulation Complete\n";
-  std::cout << "MCS = " << m_mcs;
+  std::cout << "MCS = " << m_mcs <<"\n";
+  std::cout << "maxRus = " << m_maxNRus << "\n";
   
   double totalTput = 0.0;
   double BSCtotalTput[10];
@@ -920,6 +925,7 @@ WifiDlOfdmaExample::EstablishBaAgreement (Mac48Address bssid)
     {
       ThreeGppHttpServerHelper server(m_apInterface.GetAddress(0));
       Simulator::Schedule (pingDuration, &WifiDlOfdmaExample::StartTraffic, this, server);
+      //Simulator::Schedule (pingDuration, &WifiDlOfdmaExample::StartTraffic, this);
       // Simulator::Schedule (pingDuration, &WifiDlOfdmaExample::StartStatistics, this);
     }
 }
@@ -944,11 +950,10 @@ WifiDlOfdmaExample::StartHttpServer(ThreeGppHttpServerHelper serverHelper) {
   Ptr<ThreeGppHttpServer> httpServer = m_httpServerApp.Get (0)->GetObject<ThreeGppHttpServer> ();
 
   // Example of connecting to the trace sources
-  httpServer->TraceConnectWithoutContext ("ConnectionEstablished",
-                                          MakeCallback (&ServerConnectionEstablished));
-  httpServer->TraceConnectWithoutContext ("MainObject", MakeCallback (&MainObjectGenerated));
-  httpServer->TraceConnectWithoutContext ("EmbeddedObject", MakeCallback (&EmbeddedObjectGenerated));
-  httpServer->TraceConnectWithoutContext ("Tx", MakeCallback (&ServerTx));
+  //httpServer->TraceConnectWithoutContext ("ConnectionEstablished", MakeCallback (&ServerConnectionEstablished));
+  //httpServer->TraceConnectWithoutContext ("MainObject", MakeCallback (&MainObjectGenerated));
+  //httpServer->TraceConnectWithoutContext ("EmbeddedObject", MakeCallback (&EmbeddedObjectGenerated));
+  //httpServer->TraceConnectWithoutContext ("Tx", MakeCallback (&ServerTx));
 
 
   PointerValue varPtr1;
@@ -965,6 +970,8 @@ WifiDlOfdmaExample::StartBulkClient(BulkSendHelper client) {
     m_bulkSourceApps.Stop (Seconds (m_warmup + m_simulationTime));
 }
 
+//void
+//WifiDlOfdmaExample::StartTraffic(void) 
 void
 WifiDlOfdmaExample::StartTraffic (ThreeGppHttpServerHelper serverHelper)
 {
@@ -974,11 +981,10 @@ WifiDlOfdmaExample::StartTraffic (ThreeGppHttpServerHelper serverHelper)
   Ptr<ThreeGppHttpServer> httpServer = m_httpServerApp.Get (0)->GetObject<ThreeGppHttpServer> ();
 
   // Example of connecting to the trace sources
-  httpServer->TraceConnectWithoutContext ("ConnectionEstablished",
-                                          MakeCallback (&ServerConnectionEstablished));
-  httpServer->TraceConnectWithoutContext ("MainObject", MakeCallback (&MainObjectGenerated));
-  httpServer->TraceConnectWithoutContext ("EmbeddedObject", MakeCallback (&EmbeddedObjectGenerated));
-  httpServer->TraceConnectWithoutContext ("Tx", MakeCallback (&ServerTx));
+  //httpServer->TraceConnectWithoutContext ("ConnectionEstablished", MakeCallback (&ServerConnectionEstablished));
+  //httpServer->TraceConnectWithoutContext ("MainObject", MakeCallback (&MainObjectGenerated));
+  //httpServer->TraceConnectWithoutContext ("EmbeddedObject", MakeCallback (&EmbeddedObjectGenerated));
+  //httpServer->TraceConnectWithoutContext ("Tx", MakeCallback (&ServerTx));
 
 
   PointerValue varPtr1;
@@ -992,6 +998,7 @@ WifiDlOfdmaExample::StartTraffic (ThreeGppHttpServerHelper serverHelper)
 
   // 
   uint32_t p = m_nStations - 3;
+  //uint32_t p = m_nStations;
   for (uint32_t i = 0; i < p; i++)
     {
       Ptr<Application> sourceApp = m_onOffSourceApps.Get (i);
@@ -1034,6 +1041,7 @@ WifiDlOfdmaExample::StartStatistics (void)
       else {
         m_rxStart[i] = DynamicCast<PacketSink> (m_sinkApps.Get (i - 3))->GetTotalRx ();
       }
+      //m_rxStart[i] = DynamicCast<PacketSink> (m_sinkApps.Get (i))->GetTotalRx ();
     }
 
       std::cout << m_rxStart[i] << "bytes received by sink application " << i << " before the end of the warmup period\n";
@@ -1086,6 +1094,7 @@ WifiDlOfdmaExample::StopStatistics (void)
       else {
         m_rxStop[i] = DynamicCast<PacketSink> (m_sinkApps.Get (i - 3))->GetTotalRx ();
       }
+      //m_rxStop[i] = DynamicCast<PacketSink> (m_sinkApps.Get (i))->GetTotalRx ();
     }
 
       std::cout << m_rxStop[i] << " bytes received by sink application " << i << " at the end of the simulation\n";
